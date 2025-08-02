@@ -1,0 +1,21 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Fix pour les z-index des cartes Leaflet */
+.leaflet-container {
+  z-index: 1 !important;
+}
+
+.leaflet-control-container {
+  z-index: 10 !important;
+}
+
+.leaflet-popup {
+  z-index: 1000 !important;
+}
+
+/* Assurer que les modals sont toujours au-dessus */
+.modal-overlay {
+  z-index: 9999 !important;
+}
