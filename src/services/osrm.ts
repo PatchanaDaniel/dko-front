@@ -13,7 +13,7 @@ interface Coordinates {
 }
 
 export class OSRMService {
-  private static readonly OSRM_BASE_URL = 'http://router.project-osrm.org/route/v1/driving/';
+  private static readonly OSRM_BASE_URL = 'https://router.project-osrm.org/route/v1/driving/';
 
   static async calculateTravelTime(
     from: Coordinates,
