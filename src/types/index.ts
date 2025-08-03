@@ -11,7 +11,7 @@ export interface Team {
   id: string;
   name: string;
   leaderId: string;
-  leaderName: string;
+  leader_name: string;
   members: TeamMember[];
   status: 'active' | 'inactive';
   specialization: 'general' | 'recycling' | 'organic' | 'hazardous';
@@ -41,17 +41,19 @@ export interface CollectionPoint {
 
 export interface Truck {
   id: string;
-  plateNumber: string;
-  driverId: string;
-  driverName: string;
-  current_location: {
+  plate_number: string;
+  driver_name: string;
+  status: 'collecting' | 'available' | 'maintenance' | 'offline';
+  current_location?: {
     latitude: number;
     longitude: number;
   };
- 
-  status: 'available' | 'collecting' | 'maintenance' | 'offline' | 'unavailable';
   route: CollectionPoint[];
   estimatedTime?: number;
+  // New fields for backend estimated times
+  estimated_time_to_next_point?: number;
+  next_collection_point_id?: string;
+  estimated_time_last_updated?: string;
 }
 
 export interface Report {
@@ -81,12 +83,24 @@ export interface Schedule {
   team_id: string;
   id: string;
   team: string;
+  team_name?: string;
+  truck_id?: string;
   date: string;
-  route: CollectionPoint[];
+  route: ScheduleRoute[];
   truck: string;
   start_time: string;
   estimated_end_time: string;
   status: 'planned' | 'in_progress' | 'completed' | 'cancelled';
+}
+
+export interface ScheduleRoute {
+  id: string;
+  collection_point: CollectionPoint;
+  order: number;
+  completed: boolean;
+  estimated_time?: string;
+  estimated_arrival_time?: string;
+  travel_time_minutes?: number;
 }
 
 export interface Incident {

@@ -2,14 +2,14 @@ import { CollectionPoint, Truck, Report, Schedule, Incident, Statistics, User, T
 
 // Utilisateurs avec contexte sénégalais
 export const mockUsers: User[] = [
-  { id: '1', name: 'Amadou Diallo', email: 'amadou@citizen.sn', role: 'citizen', phone: '+221701234567', first_name: 'Amadou', last_name: 'Diallo' },
-  { id: '2', name: 'Mohamed Diop', email: 'mohamed@dechetsko.com', role: 'collector', phone: '+221702345678', teamId: 'team-alpha', first_name: 'Mohamed', last_name: 'Diop' },
-  { id: '3', name: 'Omar Coordinator', email: 'omar@dechetsko.com', role: 'coordinator', phone: '+221703456789', first_name: 'Omar', last_name: 'Coordinator' },
-  { id: '4', name: 'Maire Municipal', email: 'maire@mairiedakar.com', role: 'municipality', phone: '+221704567890', first_name: 'Maire', last_name: 'Municipal' },
-  { id: '5', name: 'Agent PRN', email: 'agent@dechetsko.com', role: 'prn_agent', phone: '+221705678901', first_name: 'Agent', last_name: 'PRN' },
-  { id: '6', name: 'Daniel Tchaamie', email: 'daniel@dechetsko.com', role: 'collector', phone: '+221706789012', teamId: 'team-gamma', first_name: 'Daniel', last_name: 'Tchaamie' },
-  { id: '7', name: 'Mamadou Seck', email: 'mamadou@dechetsko.com', role: 'collector', phone: '+221707890123', teamId: 'team-alpha', first_name: 'Mamadou', last_name: 'Seck' },
-  { id: '8', name: 'Fatou Ba', email: 'fatou@dechetsko.com', role: 'collector', phone: '+221708901234', teamId: 'team-beta', first_name: 'Fatou', last_name: 'Ba' },
+  { id: '1', name: 'Amadou Diallo', email: 'amadou@citizen.sn', role: 'citizen', phone: '+221701234567' },
+  { id: '2', name: 'Mohamed Diop', email: 'mohamed@dechetsko.com', role: 'collector', phone: '+221702345678', teamId: 'team-alpha' },
+  { id: '3', name: 'Omar Coordinator', email: 'omar@dechetsko.com', role: 'coordinator', phone: '+221703456789' },
+  { id: '4', name: 'Maire Municipal', email: 'maire@mairiedakar.com', role: 'municipality', phone: '+221704567890' },
+  { id: '5', name: 'Agent PRN', email: 'agent@dechetsko.com', role: 'prn_agent', phone: '+221705678901' },
+  { id: '6', name: 'Daniel Tchaamie', email: 'daniel@dechetsko.com', role: 'collector', phone: '+221706789012', teamId: 'team-gamma' },
+  { id: '7', name: 'Mamadou Seck', email: 'mamadou@dechetsko.com', role: 'collector', phone: '+221707890123', teamId: 'team-alpha' },
+  { id: '8', name: 'Fatou Ba', email: 'fatou@dechetsko.com', role: 'collector', phone: '+221708901234', teamId: 'team-beta' },
 ];
 
 // Équipes avec leaders sénégalais
@@ -215,30 +215,30 @@ export const mockCollectionPoints: CollectionPoint[] = [
 export const mockTrucks: Truck[] = [
   {
     id: '1',
-    plateNumber: 'DK-2024-AB',
+    plate_number: 'DK-2024-AB',
     driverId: '2',
     driverName: 'Mohamed Diop',
-    currentLocation: { latitude: 14.7395, longitude: -17.4734 },
+    current_location: { latitude: 14.7395, longitude: -17.4734 },
     status: 'collecting',
     route: [mockCollectionPoints[0], mockCollectionPoints[1]],
     estimatedTime: 15
   },
   {
     id: '2',
-    plateNumber: 'DK-2024-CD',
+    plate_number: 'DK-2024-CD',
     driverId: '8',
     driverName: 'Fatou Ba',
-    currentLocation: { latitude: 14.7167, longitude: -17.5000 },
+    current_location: { latitude: 14.7167, longitude: -17.5000 },
     status: 'available',
     route: [mockCollectionPoints[5]],
     estimatedTime: 30
   },
   {
     id: '3',
-    plateNumber: 'DK-2024-EF',
+    plate_number: 'DK-2024-EF',
     driverId: '6',
     driverName: 'Daniel Tchaamie',
-    currentLocation: { latitude: 14.6928, longitude: -17.4467 },
+    current_location: { latitude: 14.6928, longitude: -17.4467 },
     status: 'maintenance',
     route: [],
   }
@@ -248,8 +248,8 @@ export const mockTrucks: Truck[] = [
 export const updateTruckLocation = (truckId: string, location: {latitude: number, longitude: number}) => {
   const truck = mockTrucks.find(t => t.id === truckId);
   if (truck) {
-    truck.currentLocation = location;
-    console.log(`Position du camion ${truck.plateNumber} mise à jour:`, location);
+    truck.current_location = location;
+    console.log(`Position du camion ${truck.plate_number} mise à jour:`, location);
   }
 };
 
@@ -264,13 +264,13 @@ export const mockReports: Report[] = [
       longitude: -17.4734,
       address: 'Marché de Yoff, Avenue Léopold Sédar Senghor'
     },
-    reportedBy: 'Citoyen anonyme',
-    reporterContact: {
+    reported_by: 'Citoyen anonyme',
+    reporter_contact: {
       name: 'Amadou Diallo',
       phone: '+221701234567',
       
     },
-    reporterType: 'citizen',
+    reporter_type: 'citizen',
     status: 'pending',
     priority: 'high',
     createdAt: '2025-01-15T09:30:00Z'
@@ -284,13 +284,13 @@ export const mockReports: Report[] = [
       longitude: -17.4833,
       address: 'Route de l\'Aéroport, Ouest Foire'
     },
-    reportedBy: 'Mohamed Diop',
-    reporterContact: {
+    reported_by: 'Mohamed Diop',
+    reporter_contact: {
       name: 'Mohamed Diop',
       phone: '+221702345678',
       
     },
-    reporterType: 'collector',
+    reporter_type: 'collector',
     status: 'in_progress',
     priority: 'medium',
     createdAt: '2025-01-14T16:45:00Z',
@@ -305,13 +305,13 @@ export const mockReports: Report[] = [
       longitude: -17.4467,
       address: 'Avenue Cheikh Anta Diop, Point E'
     },
-    reportedBy: 'Agent PRN',
-    reporterContact: {
+    reported_by: 'Agent PRN',
+    reporter_contact: {
       name: 'Agent PRN Service',
       phone: '+221705678901',
       email: 'agent@dechetsko.com'
     },
-    reporterType: 'agent',
+    reporter_type: 'agent',
     status: 'resolved',
     priority: 'medium',
     createdAt: '2025-01-13T11:20:00Z',
@@ -323,32 +323,35 @@ export const mockReports: Report[] = [
 export const mockSchedules: Schedule[] = [
   {
     id: '1',
-    teamId: 'team-alpha',
+    team_id: 'team-alpha',
+    team: 'team-alpha',
     date: '2025-01-16',
     route: [mockCollectionPoints[0], mockCollectionPoints[1], mockCollectionPoints[4]],
-    truckId: '1',
-    startTime: '08:00',
-    estimatedEndTime: '12:00',
+    truck: '1',
+    start_time: '08:00',
+    estimated_end_time: '12:00',
     status: 'planned'
   },
   {
     id: '2',
-    teamId: 'team-beta',
+    team_id: 'team-beta',
+    team: 'team-beta',
     date: '2025-01-16',
     route: [mockCollectionPoints[5], mockCollectionPoints[6]],
-    truckId: '2',
-    startTime: '09:00',
-    estimatedEndTime: '13:00',
+    truck: '2',
+    start_time: '09:00',
+    estimated_end_time: '13:00',
     status: 'in_progress'
   },
   {
     id: '3',
-    teamId: 'team-gamma',
+    team_id: 'team-gamma',
+    team: 'team-gamma',
     date: '2025-01-17',
     route: [mockCollectionPoints[7], mockCollectionPoints[8], mockCollectionPoints[9]],
-    truckId: '3',
-    startTime: '14:00',
-    estimatedEndTime: '16:00',
+    truck: '3',
+    start_time: '14:00',
+    estimated_end_time: '16:00',
     status: 'planned'
   }
 ];
@@ -364,7 +367,7 @@ export const mockIncidents: Incident[] = [
       longitude: -17.4500,
       address: 'Voie de Dégagement Nord (VDN)'
     },
-    reportedBy: 'Fatou Ba',
+    reported_by: 'Fatou Ba',
     severity: 'high',
     impact: 'Retard de 45 minutes sur la collecte à Ouest Foire',
     estimatedDelay: 45,
@@ -380,7 +383,7 @@ export const mockIncidents: Incident[] = [
       longitude: -17.4167,
       address: 'Marché Central, Guédiawaye'
     },
-    reportedBy: 'Daniel Tchaamie',
+    reported_by: 'Daniel Tchaamie',
     severity: 'high',
     impact: 'Camion immobilisé, besoin de remplacement urgent',
     estimatedDelay: 120,
@@ -449,5 +452,42 @@ export const detailedStatistics = {
     totalSurveys: 847,
     complaints: 43,
     compliments: 67
+  },
+  
+  costAnalysis: {
+    totalBudget: 45000000, // 45 millions FCFA
+    totalSpent: 41100000,  // 41.1 millions FCFA
+    categories: [
+      {
+        category: 'Carburant',
+        amount: 11100000, // 11.1 millions FCFA
+        budget: 12000000, // 12 millions FCFA
+        percentage: 27.0
+      },
+      {
+        category: 'Maintenance véhicules',
+        amount: 7380000,  // 7.38 millions FCFA
+        budget: 9000000,  // 9 millions FCFA
+        percentage: 17.9
+      },
+      {
+        category: 'Salaires équipes',
+        amount: 16800000, // 16.8 millions FCFA
+        budget: 15000000, // 15 millions FCFA
+        percentage: 40.9
+      },
+      {
+        category: 'Équipements',
+        amount: 3120000,  // 3.12 millions FCFA
+        budget: 4800000,  // 4.8 millions FCFA
+        percentage: 7.6
+      },
+      {
+        category: 'Autres frais',
+        amount: 2700000,  // 2.7 millions FCFA
+        budget: 4200000,  // 4.2 millions FCFA
+        percentage: 6.6
+      }
+    ]
   }
 };

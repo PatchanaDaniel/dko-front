@@ -67,6 +67,8 @@ const AppContent: React.FC = () => {
     
     switch (activeView) {
       case 'reports':
+        // Diriger vers l'onglet reports du CoordinatorView pour les coordinateurs
+        if (user.role === 'coordinator') return <CoordinatorView initialTab='reports' />;
         return <ReportView />;
         
       case 'dashboard':
@@ -77,14 +79,18 @@ const AppContent: React.FC = () => {
         return <PublicView />;
       
       case 'schedule':
-      case 'incidents':
-        return <CollectorView />;
+        if (user.role === 'collector') return <CollectorView />;
+        return <PublicView />;
+      /*case 'incidents':
+        return <CollectorView />;*/
       
       case 'planning': 
         if (user.role === 'coordinator') return <CoordinatorView initialTab='planning' />;
+        return <PublicView />;
        
       case 'teams':
-        return <CoordinatorView initialTab="teams" />;
+        if (user.role === 'coordinator') return <CoordinatorView initialTab="teams" />;
+        return <PublicView />;
       case 'trucks':
         if (user.role === 'coordinator') return <CoordinatorView initialTab='trucks' />;
         return <PublicView />;

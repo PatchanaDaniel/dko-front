@@ -1,6 +1,26 @@
 # Déchets KO - Gestion Intelligente des Déchets
 
-Application complète de gestion des déchets avec frontend React et backend Django.
+Application complète de gestion des déchets avec frontend React et backend Django, adaptée au contexte sénégalais.
+
+## 💰 Devise et Localisation
+
+L'application utilise le **Franc CFA (FCFA)** comme devise principale, adaptée au contexte sénégalais.
+
+### Utilitaires de Devise
+
+```typescript
+import { formatCurrency, euroToFCFA } from './src/utils/currency';
+
+// Formatage basique
+formatCurrency(1500000); // "1,500,000 FCFA"
+
+// Formatage compact
+formatCurrency(1500000, { compact: true }); // "1.5M FCFA"
+formatCurrency(25000, { compact: true });   // "25.0K FCFA"
+
+// Conversion Euro → FCFA
+const fcfaAmount = euroToFCFA(100); // ~65,596 FCFA
+```
 
 ## 📁 Structure du projet
 

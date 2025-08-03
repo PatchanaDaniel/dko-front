@@ -41,8 +41,8 @@ const handleResponse = async <T>(response: Response): Promise<APIResponse<T>> =>
     console.error('❌ Erreur HTTP:', response.status, json);
     return {
       success: false,
-      error: json.message || `HTTP ${response.status}: ${response.statusText}`,
-      data: undefined,
+      message: json.message || `HTTP ${response.status}: ${response.statusText}`,
+      data: null as T,
     };
   }
   console.log('✅ Réponse HTTP réussie');
@@ -171,6 +171,20 @@ export const trucksAPI = {
     });
     return handleResponse(response);
   },
+
+  // Mettre à jour le temps estimé d'un camion
+  updateEstimatedTime: async (id: string, data: { 
+    estimated_time: number; 
+    next_collection_point_id: string;
+    last_updated?: string;
+  }): Promise<APIResponse<Truck>> => {
+    const response = await fetch(`${API_CONFIG.BASE_URL}/trucks/${id}/estimated-time/`, {
+      method: 'PATCH',
+      headers: getAuthHeaders(),
+      body: JSON.stringify(data),
+    });
+    return handleResponse(response);
+  },
 };
 
 // === REPORTS SERVICES ===
@@ -211,6 +225,24 @@ export const reportsAPI = {
     });
     return handleResponse(response);
   },
+
+  // Assigner une équipe à un signalement
+  assignTeam: async (reportId: string, teamId: string): Promise<APIResponse<Report>> => {
+    const response = await fetch(`${API_CONFIG.BASE_URL}/reports/${reportId}/assign-team/`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: JSON.stringify({ team_id: teamId }),
+    });
+    return handleResponse(response);
+  },
+
+  // Récupérer un signalement par ID
+  getById: async (id: string): Promise<APIResponse<Report>> => {
+    const response = await fetch(`${API_CONFIG.BASE_URL}/reports/${id}/`, {
+      headers: baseHeaders,
+    });
+    return handleResponse(response);
+  },
 };
 
 // === SCHEDULES SERVICES ===
@@ -239,6 +271,15 @@ export const schedulesAPI = {
       method: 'PATCH',
       headers: getAuthHeaders(),
       body: JSON.stringify(updates),
+    });
+    return handleResponse(response);
+  },
+
+  // Supprimer un planning
+  delete: async (id: string): Promise<APIResponse<null>> => {
+    const response = await fetch(`${API_CONFIG.BASE_URL}/schedules/${id}/`, {
+      method: 'DELETE',
+      headers: getAuthHeaders(),
     });
     return handleResponse(response);
   },

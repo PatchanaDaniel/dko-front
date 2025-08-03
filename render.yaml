@@ -3,5 +3,5 @@ services:
     name: react-frontend
     env: node
     buildCommand: "npm install && npm run build"
-    publishPath: "build"
+    publishPath: "dist"
     

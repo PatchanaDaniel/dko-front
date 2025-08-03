@@ -12,21 +12,19 @@ import {
   Clock,
   TrendingUp,
   Target,
-  CheckCircle,
   AlertTriangle,
   Home,
   DollarSign,
   Activity,
   Crown,
-  Phone,
-  Mail,
   Trash2
 } from 'lucide-react';
-import { mockSchedules, mockReports, mockTrucks, mockStatistics, mockCollectionPoints, detailedStatistics, mockTeams } from '../../data/mockData';
+import { mockReports, mockTrucks, mockStatistics, mockCollectionPoints, detailedStatistics } from '../../data/mockData';
 import { PlanningModal } from '../Common/PlanningModal';
 import { TeamModal } from '../Common/TeamModal';
-import { Team, User } from '../../types';
-import { trucksAPI, usersAPI, teamsAPI } from '../../services/api';
+import ReportsView from './ReportsView';
+import { Team, User, Schedule, Truck as TruckType } from '../../types';
+import { trucksAPI, usersAPI, teamsAPI, schedulesAPI } from '../../services/api';
 
 export const CoordinatorView: React.FC <{ initialTab?: string }> = ({ initialTab = 'dashboard' }) => {
   const [activeTab, setActiveTab] = useState(initialTab);
@@ -39,9 +37,9 @@ export const CoordinatorView: React.FC <{ initialTab?: string }> = ({ initialTab
   const [teamModalMode, setTeamModalMode] = useState<'create' | 'edit'>('create');
 
   // State for trucks CRUD
-  const [trucks, setTrucks] = useState<Truck[]>([]);
+  const [trucks, setTrucks] = useState<TruckType[]>([]);
   const [loadingTrucks, setLoadingTrucks] = useState(true);
-  const [truckForm, setTruckForm] = useState<Partial<Truck> | null>(null);
+  const [truckForm, setTruckForm] = useState<Partial<TruckType> | null>(null);
   const [truckModalMode, setTruckModalMode] = useState<'create' | 'edit'>('create');
   const [showTruckModal, setShowTruckModal] = useState(false);
 
@@ -52,10 +50,19 @@ export const CoordinatorView: React.FC <{ initialTab?: string }> = ({ initialTab
   const [teams, setTeams] = useState<Team[]>([]);
   const [loadingTeams, setLoadingTeams] = useState(true);
 
+  // State for schedules CRUD
+  const [schedules, setSchedules] = useState<Schedule[]>([]);
+  const [loadingSchedules, setLoadingSchedules] = useState(true);
+  const [selectedSchedule, setSelectedSchedule] = useState<Schedule | null>(null);
+  const [scheduleModalMode, setScheduleModalMode] = useState<'create' | 'edit'>('create');
+  const [showScheduleModal, setShowScheduleModal] = useState(false);
+
   // Données pour le coordinateur
   const pendingReports = mockReports.filter(r => r.status === 'pending');
   const inProgressReports = mockReports.filter(r => r.status === 'in_progress');
-  const todaySchedules = mockSchedules.filter(s => s.date === '2025-01-16');
+  // Calculs basés sur les vraies données
+  const today = new Date().toISOString().split('T')[0];
+  const todaySchedules = schedules.filter(s => s.date === today);
   const activeTrucks = mockTrucks.filter(t => t.status !== 'maintenance');
   const overflowPoints = mockCollectionPoints.filter(p => p.status === 'overflow');
   const fullPoints = mockCollectionPoints.filter(p => p.status === 'full');
@@ -130,7 +137,7 @@ export const CoordinatorView: React.FC <{ initialTab?: string }> = ({ initialTab
   }, [activeTab]);
 
   // CRUD handlers
-  const handleCreateTruck = async (truck: Partial<Truck>) => {
+  const handleCreateTruck = async (truck: Partial<TruckType>) => {
     const res = await trucksAPI.create(truck as any);
     if (res.success && res.data) {
       setTrucks(prev => [...prev, res.data]);
@@ -138,7 +145,7 @@ export const CoordinatorView: React.FC <{ initialTab?: string }> = ({ initialTab
     }
   };
 
-  const handleUpdateTruck = async (id: string, updates: Partial<Truck>) => {
+  const handleUpdateTruck = async (id: string, updates: Partial<TruckType>) => {
     const res = await trucksAPI.update(id, updates);
     if (res.success && res.data) {
       setTrucks(prev => prev.map(t => t.id === id ? res.data : t));
@@ -178,6 +185,87 @@ export const CoordinatorView: React.FC <{ initialTab?: string }> = ({ initialTab
       setTeams(prev => prev.filter(t => t.id !== id));
     }
   };
+
+  // Schedule CRUD handlers
+  const handleCreateSchedule = async (schedule: Partial<Schedule>) => {
+    // Nous devons nous assurer que tous les champs requis sont présents
+    const completeSchedule = {
+      team_id: schedule.team_id || '',
+      team: schedule.team || '',
+      date: schedule.date || '',
+      route: schedule.route || [],
+      truck: schedule.truck || '',
+      start_time: schedule.start_time || '',
+      estimated_end_time: schedule.estimated_end_time || '',
+      status: schedule.status || 'planned' as const
+    };
+
+    const res = await schedulesAPI.create(completeSchedule);
+    if (res.success && res.data) {
+      setSchedules(prev => [...prev, res.data]);
+      setShowScheduleModal(false);
+    }
+  };
+
+  const handleUpdateSchedule = async (id: string, updates: Partial<Schedule>) => {
+    const res = await schedulesAPI.update(id, updates);
+    if (res.success && res.data) {
+      setSchedules(prev => prev.map(s => s.id === id ? res.data : s));
+      setShowScheduleModal(false);
+    }
+  };
+
+  const handleDeleteSchedule = async (id: string) => {
+    if (!window.confirm('Supprimer cette planification ?')) return;
+    const res = await schedulesAPI.delete(id);
+    if (res.success) {
+      setSchedules(prev => prev.filter(s => s.id !== id));
+    }
+  };
+
+  const loadSchedules = async () => {
+    setLoadingSchedules(true);
+    try {
+      const res = await schedulesAPI.getAll();
+      if (res.success && res.data && res.data.results) {
+        setSchedules(res.data.results);
+      }
+    } catch (error) {
+      console.error('Erreur lors du chargement des planifications:', error);
+    } finally {
+      setLoadingSchedules(false);
+    }
+  };
+
+  // Load schedules on component mount
+  useEffect(() => {
+    loadSchedules();
+  }, []);
+
+  // Fonction pour organiser les schedules par jour de la semaine
+  const getWeeklySchedules = () => {
+    const now = new Date();
+    const startOfWeek = new Date(now.setDate(now.getDate() - now.getDay() + 1)); // Lundi
+    const weekDays = [];
+    
+    for (let i = 0; i < 7; i++) {
+      const date = new Date(startOfWeek);
+      date.setDate(startOfWeek.getDate() + i);
+      const dateString = date.toISOString().split('T')[0];
+      
+      const daySchedules = schedules.filter(schedule => schedule.date === dateString);
+      
+      weekDays.push({
+        dayName: ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'][i],
+        date: dateString,
+        schedules: daySchedules
+      });
+    }
+    
+    return weekDays;
+  };
+
+  const weeklySchedules = getWeeklySchedules();
 
   return (
     <div className="space-y-6">
@@ -307,9 +395,9 @@ export const CoordinatorView: React.FC <{ initialTab?: string }> = ({ initialTab
                       <div key={schedule.id} className="border border-gray-200 rounded p-3">
                         <div className="flex justify-between items-center">
                           <div>
-                            <h4 className="font-medium">Équipe {schedule.teamId}</h4>
+                            <h4 className="font-medium">Équipe {schedule.team_id} </h4>
                             <p className="text-sm text-gray-600">
-                              {schedule.startTime} - {schedule.estimatedEndTime} | {schedule.route.length} points
+                              {schedule.start_time} - {schedule.estimated_end_time} | {schedule.route.length} points
                             </p>
                           </div>
                           <span className={`px-2 py-1 text-xs font-medium rounded-full ${
@@ -358,7 +446,11 @@ export const CoordinatorView: React.FC <{ initialTab?: string }> = ({ initialTab
               <div className="flex justify-between items-center">
                 <h2 className="text-lg font-semibold text-gray-900">Gestion des plannings</h2>
                 <button
-                  onClick={() => setShowPlanningModal(true)}
+                  onClick={() => {
+                    setSelectedSchedule(null);
+                    setScheduleModalMode('create');
+                    setShowScheduleModal(true);
+                  }}
                   className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
                 >
                   <Plus className="mr-2 h-5 w-5" />
@@ -368,69 +460,246 @@ export const CoordinatorView: React.FC <{ initialTab?: string }> = ({ initialTab
 
               {/* Planning hebdomadaire */}
               <div className="bg-white border border-gray-200 rounded-lg p-6">
-                <h3 className="text-lg font-semibold text-gray-900 mb-4">Planning de la semaine</h3>
-                <div className="grid grid-cols-7 gap-2 mb-4">
-                  {['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'].map((day, index) => (
-                    <div key={day} className="text-center">
-                      <div className="font-medium text-gray-700 mb-2">{day}</div>
-                      <div className="space-y-1">
-                        {index < 5 && (
-                          <div className="bg-blue-100 text-blue-800 text-xs p-2 rounded">
-                            Équipe Alpha<br/>08:00-12:00
-                          </div>
-                        )}
-                        {index < 6 && index > 1 && (
-                          <div className="bg-green-100 text-green-800 text-xs p-2 rounded">
-                            Équipe Beta<br/>09:00-13:00
-                          </div>
-                        )}
+                <div className="flex justify-between items-center mb-4">
+                  <h3 className="text-lg font-semibold text-gray-900">Planning de la semaine</h3>
+                  {!loadingSchedules && (
+                    <div className="flex space-x-4 text-sm">
+                      <div className="text-center">
+                        <div className="text-lg font-bold text-blue-600">
+                          {weeklySchedules.reduce((total, day) => total + day.schedules.length, 0)}
+                        </div>
+                        <div className="text-xs text-gray-500">Total planifications</div>
+                      </div>
+                      <div className="text-center">
+                        <div className="text-lg font-bold text-green-600">
+                          {weeklySchedules.reduce((total, day) => 
+                            total + day.schedules.filter(s => s.status === 'completed').length, 0
+                          )}
+                        </div>
+                        <div className="text-xs text-gray-500">Terminées</div>
+                      </div>
+                      <div className="text-center">
+                        <div className="text-lg font-bold text-orange-600">
+                          {weeklySchedules.reduce((total, day) => 
+                            total + day.schedules.filter(s => s.status === 'in_progress').length, 0
+                          )}
+                        </div>
+                        <div className="text-xs text-gray-500">En cours</div>
                       </div>
                     </div>
-                  ))}
+                  )}
+                </div>
+                {loadingSchedules ? (
+                  <div className="grid grid-cols-7 gap-2 mb-4">
+                    {['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'].map((day) => (
+                      <div key={day} className="text-center">
+                        <div className="font-medium text-gray-700 mb-2">{day}</div>
+                        <div className="space-y-1">
+                          <div className="bg-gray-200 animate-pulse text-xs p-2 rounded h-12"></div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-7 gap-2 mb-4">
+                    {weeklySchedules.map((day) => (
+                      <div key={day.dayName} className="text-center">
+                        <div className="font-medium text-gray-700 mb-2">
+                          {day.dayName}
+                          <div className="text-xs text-gray-500">
+                            {new Date(day.date).getDate()}/
+                            {new Date(day.date).getMonth() + 1}
+                          </div>
+                        </div>
+                        <div className="space-y-1">
+                          {day.schedules.length > 0 ? (
+                            day.schedules.slice(0, 3).map((schedule, index) => (
+                              <div 
+                                key={schedule.id} 
+                                className={`text-xs p-2 rounded cursor-pointer transition-colors relative ${
+                                  schedule.status === 'completed' ? 'bg-green-100 text-green-800 hover:bg-green-200' :
+                                  schedule.status === 'in_progress' ? 'bg-blue-100 text-blue-800 hover:bg-blue-200' :
+                                  schedule.status === 'cancelled' ? 'bg-red-100 text-red-800 hover:bg-red-200' :
+                                  'bg-gray-100 text-gray-800 hover:bg-gray-200'
+                                }`}
+                                onClick={() => {
+                                  setSelectedSchedule(schedule);
+                                  setScheduleModalMode('edit');
+                                  setShowScheduleModal(true);
+                                }}
+                                title={`Équipe ${schedule.team_id} - ${schedule.start_time} à ${schedule.estimated_end_time} (${
+                                  schedule.status === 'completed' ? 'Terminé' :
+                                  schedule.status === 'in_progress' ? 'En cours' :
+                                  schedule.status === 'cancelled' ? 'Annulé' : 'Planifié'
+                                })`}
+                              >
+                                {/* Indicateur de statut */}
+                                <div className={`absolute top-1 right-1 w-2 h-2 rounded-full ${
+                                  schedule.status === 'completed' ? 'bg-green-500' :
+                                  schedule.status === 'in_progress' ? 'bg-blue-500' :
+                                  schedule.status === 'cancelled' ? 'bg-red-500' : 'bg-gray-400'
+                                }`}></div>
+                                
+                                Équipe {schedule.team_id}<br/>
+                                {schedule.start_time.substring(0, 5)}-{schedule.estimated_end_time.substring(0, 5)}
+                                {schedule.route && schedule.route.length > 0 && (
+                                  <div className="text-xs opacity-75 mt-1">
+                                    {schedule.route.length} pts
+                                  </div>
+                                )}
+                              </div>
+                            ))
+                          ) : (
+                            <div 
+                              className="text-xs text-gray-400 p-2 border-2 border-dashed border-gray-200 rounded cursor-pointer hover:border-blue-300 hover:text-blue-500 transition-colors"
+                              onClick={() => {
+                                // Pré-remplir la date du jour sélectionné
+                                setSelectedSchedule(null);
+                                setScheduleModalMode('create');
+                                setShowScheduleModal(true);
+                                // Note: On pourrait passer la date via un état si besoin
+                              }}
+                              title="Cliquez pour créer une planification pour ce jour"
+                            >
+                              Aucune<br/>planification<br/>
+                              <span className="text-xs opacity-60">+ Ajouter</span>
+                            </div>
+                          )}
+                          {day.schedules.length > 3 && (
+                            <div className="text-xs text-gray-500 p-1">
+                              +{day.schedules.length - 3} autres
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                
+                {/* Légende */}
+                <div className="mt-4 pt-4 border-t border-gray-200">
+                  <div className="flex flex-wrap gap-4 text-xs">
+                    <div className="flex items-center">
+                      <div className="w-3 h-3 bg-gray-100 rounded mr-2 relative">
+                        <div className="absolute top-0 right-0 w-2 h-2 bg-gray-400 rounded-full"></div>
+                      </div>
+                      <span className="text-gray-600">Planifié</span>
+                    </div>
+                    <div className="flex items-center">
+                      <div className="w-3 h-3 bg-blue-100 rounded mr-2 relative">
+                        <div className="absolute top-0 right-0 w-2 h-2 bg-blue-500 rounded-full"></div>
+                      </div>
+                      <span className="text-gray-600">En cours</span>
+                    </div>
+                    <div className="flex items-center">
+                      <div className="w-3 h-3 bg-green-100 rounded mr-2 relative">
+                        <div className="absolute top-0 right-0 w-2 h-2 bg-green-500 rounded-full"></div>
+                      </div>
+                      <span className="text-gray-600">Terminé</span>
+                    </div>
+                    <div className="flex items-center">
+                      <div className="w-3 h-3 bg-red-100 rounded mr-2 relative">
+                        <div className="absolute top-0 right-0 w-2 h-2 bg-red-500 rounded-full"></div>
+                      </div>
+                      <span className="text-gray-600">Annulé</span>
+                    </div>
+                    <div className="flex items-center ml-auto">
+                      <span className="text-gray-500">Cliquez sur une planification pour modifier</span>
+                    </div>
+                  </div>
                 </div>
               </div>
 
               {/* Plannings détaillés */}
               <div className="space-y-4">
-                {mockSchedules.map((schedule) => (
-                  <div key={schedule.id} className="bg-white border border-gray-200 rounded-lg p-6">
-                    <div className="flex justify-between items-start mb-4">
-                      <div>
-                        <h3 className="font-semibold text-gray-900">
-                          Équipe {schedule.teamId} - {new Date(schedule.date).toLocaleDateString()}
-                        </h3>
-                        <p className="text-gray-600">
-                          {schedule.startTime} - {schedule.estimatedEndTime} | Camion {schedule.truckId}
-                        </p>
+                {loadingSchedules ? (
+                  <div className="bg-white border border-gray-200 rounded-lg p-6">
+                    <div className="animate-pulse">
+                      <div className="h-4 bg-gray-200 rounded w-1/3 mb-2"></div>
+                      <div className="h-3 bg-gray-200 rounded w-2/3 mb-4"></div>
+                      <div className="grid grid-cols-3 gap-4">
+                        <div className="h-3 bg-gray-200 rounded"></div>
+                        <div className="h-3 bg-gray-200 rounded"></div>
+                        <div className="h-3 bg-gray-200 rounded"></div>
                       </div>
-                      <div className="flex items-center space-x-2">
-                        <span className={`px-3 py-1 text-sm font-medium rounded-full ${
-                          schedule.status === 'completed' ? 'bg-green-100 text-green-800' :
-                          schedule.status === 'in_progress' ? 'bg-blue-100 text-blue-800' :
-                          'bg-gray-100 text-gray-800'
-                        }`}>
-                          {schedule.status === 'completed' ? 'Terminé' :
-                           schedule.status === 'in_progress' ? 'En cours' : 'Planifié'}
-                        </span>
-                        <button className="text-blue-600 hover:text-blue-700">
-                          <Edit className="h-4 w-4" />
-                        </button>
-                      </div>
-                    </div>
-                    
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
-                      <div>
-                        <span className="font-medium">Points de collecte:</span> {schedule.route.length}
-                      </div>
-                      <div>
-                        <span className="font-medium">Distance estimée:</span> {schedule.route.length * 2.5} km
-                      </div>
-                      {/* <div>
-                        <span className="font-medium">Coût estimé:</span> {schedule.route.length * 15}€
-                      </div> */}
                     </div>
                   </div>
-                ))}
+                ) : schedules.length > 0 ? (
+                  schedules.map((schedule) => (
+                    <div key={schedule.id} className="bg-white border border-gray-200 rounded-lg p-6">
+                      <div className="flex justify-between items-start mb-4">
+                        <div>
+                          <h3 className="font-semibold text-gray-900">
+                            Équipe {schedule.team_id} - {new Date(schedule.date).toLocaleDateString()}
+                          </h3>
+                          <p className="text-gray-600">
+                            {schedule.start_time} - {schedule.estimated_end_time} | Camion {schedule.truck}
+                          </p>
+                        </div>
+                        <div className="flex items-center space-x-2">
+                          <span className={`px-3 py-1 text-sm font-medium rounded-full ${
+                            schedule.status === 'completed' ? 'bg-green-100 text-green-800' :
+                            schedule.status === 'in_progress' ? 'bg-blue-100 text-blue-800' :
+                            'bg-gray-100 text-gray-800'
+                          }`}>
+                            {schedule.status === 'completed' ? 'Terminé' :
+                             schedule.status === 'in_progress' ? 'En cours' : 'Planifié'}
+                          </span>
+                          <button 
+                            onClick={() => {
+                              setSelectedSchedule(schedule);
+                              setScheduleModalMode('edit');
+                              setShowScheduleModal(true);
+                            }}
+                            className="text-blue-600 hover:text-blue-700"
+                          >
+                            <Edit className="h-4 w-4" />
+                          </button>
+                          <button 
+                            onClick={() => handleDeleteSchedule(schedule.id)}
+                            className="text-red-600 hover:text-red-700"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        </div>
+                      </div>
+                      
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
+                        <div>
+                          <span className="font-medium">Points de collecte:</span> {schedule.route?.length || 0}
+                        </div>
+                        <div>
+                          <span className="font-medium">Distance estimée:</span> {(schedule.route?.length || 0) * 2.5} km
+                        </div>
+                        <div>
+                          <span className="font-medium">Coût estimé:</span> {((schedule.route?.length || 0) * 15 * 655.957).toLocaleString('fr-FR', {
+                            style: 'currency',
+                            currency: 'XOF',
+                            minimumFractionDigits: 0,
+                            maximumFractionDigits: 0
+                          })}
+                        </div>
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <div className="bg-white border border-gray-200 rounded-lg p-6 text-center">
+                    <Calendar className="mx-auto h-12 w-12 text-gray-400 mb-4" />
+                    <h3 className="text-lg font-medium text-gray-900 mb-2">Aucun planning</h3>
+                    <p className="text-gray-600 mb-4">Commencez par créer votre premier planning.</p>
+                    <button
+                      onClick={() => {
+                        setSelectedSchedule(null);
+                        setScheduleModalMode('create');
+                        setShowScheduleModal(true);
+                      }}
+                      className="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
+                    >
+                      <Plus className="mr-2 h-4 w-4" />
+                      Créer un planning
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -472,7 +741,7 @@ export const CoordinatorView: React.FC <{ initialTab?: string }> = ({ initialTab
                     <h3 className="text-sm font-medium text-gray-600">Coûts</h3>
                     <DollarSign className="h-5 w-5 text-purple-600" />
                   </div>
-                  <div className="text-2xl font-bold text-gray-900">45,230€</div>
+                  <div className="text-2xl font-bold text-gray-900">41,1M FCFA</div>
                   <div className="text-sm text-red-600">+5% vs budget</div>
                 </div>
 
@@ -543,20 +812,75 @@ export const CoordinatorView: React.FC <{ initialTab?: string }> = ({ initialTab
                 {/* Analyse des coûts */}
                 <div className="bg-white border border-gray-200 rounded-lg p-6">
                   <h3 className="text-lg font-semibold text-gray-900 mb-4">Analyse des coûts</h3>
+                  
+                  {/* Résumé budgétaire */}
+                  <div className="mb-6 p-4 bg-gray-50 rounded-lg">
+                    <div className="flex justify-between items-center mb-2">
+                      <span className="text-sm font-medium text-gray-700">Budget total</span>
+                      <span className="text-lg font-bold text-gray-900">
+                        {(detailedStatistics.costAnalysis.totalBudget / 1000000).toFixed(1)}M FCFA
+                      </span>
+                    </div>
+                    <div className="flex justify-between items-center mb-2">
+                      <span className="text-sm font-medium text-gray-700">Dépensé</span>
+                      <span className="text-lg font-bold text-blue-900">
+                        {(detailedStatistics.costAnalysis.totalSpent / 1000000).toFixed(1)}M FCFA
+                      </span>
+                    </div>
+                    <div className="w-full bg-gray-200 rounded-full h-3 mt-2">
+                      <div 
+                        className="bg-blue-600 h-3 rounded-full transition-all duration-300"
+                        style={{
+                          width: `${(detailedStatistics.costAnalysis.totalSpent / detailedStatistics.costAnalysis.totalBudget) * 100}%`
+                        }}
+                      ></div>
+                    </div>
+                    <div className="text-sm text-gray-600 mt-1">
+                      {((detailedStatistics.costAnalysis.totalSpent / detailedStatistics.costAnalysis.totalBudget) * 100).toFixed(1)}% utilisé
+                    </div>
+                  </div>
+
+                  {/* Détail par catégorie */}
                   <div className="space-y-4">
                     {detailedStatistics.costAnalysis.categories.map((category) => (
                       <div key={category.category} className="space-y-2">
                         <div className="flex justify-between items-center">
-                          <span className="text-sm font-medium">{category.category}</span>
-                          <span className="text-sm font-bold">{category.amount.toLocaleString()}€</span>
+                          <span className="text-sm font-medium text-gray-700">{category.category}</span>
+                          <div className="text-right">
+                            <span className="text-sm font-bold text-gray-900">
+                              {(category.amount / 1000000).toFixed(1)}M FCFA
+                            </span>
+                            <span className="text-xs text-gray-500 ml-2">
+                              / {(category.budget / 1000000).toFixed(1)}M FCFA
+                            </span>
+                          </div>
                         </div>
                         <div className="w-full bg-gray-200 rounded-full h-2">
                           <div 
                             className={`h-2 rounded-full transition-all duration-300 ${
-                              category.amount > category.budget ? 'bg-red-500' : 'bg-green-500'
+                              category.amount > category.budget 
+                                ? 'bg-red-500' 
+                                : category.amount > category.budget * 0.8 
+                                  ? 'bg-yellow-500' 
+                                  : 'bg-green-500'
                             }`}
                             style={{width: `${Math.min((category.amount / category.budget) * 100, 100)}%`}}
                           ></div>
+                        </div>
+                        <div className="flex justify-between text-xs">
+                          <span className="text-gray-500">{category.percentage}% du total</span>
+                          <span className={`font-medium ${
+                            category.amount > category.budget 
+                              ? 'text-red-600' 
+                              : category.amount > category.budget * 0.8 
+                                ? 'text-yellow-600' 
+                                : 'text-green-600'
+                          }`}>
+                            {category.amount > category.budget 
+                              ? `+${((category.amount / category.budget - 1) * 100).toFixed(1)}% dépassement`
+                              : `${((1 - category.amount / category.budget) * 100).toFixed(1)}% restant`
+                            }
+                          </span>
                         </div>
                       </div>
                     ))}
@@ -846,7 +1170,7 @@ export const CoordinatorView: React.FC <{ initialTab?: string }> = ({ initialTab
                     <div key={truck.id} className="bg-white border border-gray-200 rounded-lg p-6">
                       <div className="flex justify-between items-start">
                         <div className="flex-1">
-                          <h3 className="font-semibold text-gray-900">{truck.plateNumber || truck.plate_number}</h3>
+                          <h3 className="font-semibold text-gray-900">{truck.plate_number || truck.plate_number}</h3>
                           <p className="text-gray-600">Conducteur: {truck.driverName || truck.driver_name}</p>
                           <div className="mt-2 text-sm text-gray-600">
                             Points assignés: {truck.route?.length ?? 0}
@@ -935,8 +1259,8 @@ export const CoordinatorView: React.FC <{ initialTab?: string }> = ({ initialTab
                         <input
                           type="text"
                           className="w-full border rounded px-3 py-2"
-                          value={truckForm?.plateNumber || truckForm?.plate_number || ''}
-                          onChange={e => setTruckForm(f => ({ ...f, plateNumber: e.target.value }))}
+                          value={truckForm?.plate_number || truckForm?.plate_number || ''}
+                          onChange={e => setTruckForm(f => ({ ...f, plate_number: e.target.value }))}
                           required
                         />
                       </div>
@@ -1020,42 +1344,7 @@ export const CoordinatorView: React.FC <{ initialTab?: string }> = ({ initialTab
           )}
 
           {activeTab === 'reports' && (
-            <div className="space-y-6">
-              <h2 className="text-lg font-semibold text-gray-900">Gestion des signalements</h2>
-              <div className="space-y-4">
-                {mockReports.map((report) => (
-                  <div key={report.id} className="bg-white border border-gray-200 rounded-lg p-6">
-                    <div className="flex justify-between items-start mb-2">
-                      <h3 className="font-medium text-gray-900">
-                        {report.type === 'overflow' ? 'Débordement' :
-                         report.type === 'damage' ? 'Dommage' : 'Autre'}
-                      </h3>
-                      <div className="flex space-x-2">
-                        <span className={`px-2 py-1 text-xs font-medium rounded-full ${
-                          report.status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
-                          report.status === 'in_progress' ? 'bg-blue-100 text-blue-800' :
-                          'bg-green-100 text-green-800'
-                        }`}>
-                          {report.status === 'pending' ? 'En attente' :
-                           report.status === 'in_progress' ? 'En cours' : 'Résolu'}
-                        </span>
-                        <span className={`px-2 py-1 text-xs font-medium rounded-full ${
-                          report.priority === 'high' ? 'bg-red-100 text-red-800' :
-                          'bg-yellow-100 text-yellow-800'
-                        }`}>
-                          {report.priority === 'high' ? 'Haute' : 'Moyenne'}
-                        </span>
-                      </div>
-                    </div>
-                    <p className="text-gray-700 mb-2">{report.description}</p>
-                    <div className="flex items-center text-sm text-gray-600">
-                      <MapPin className="mr-1 h-4 w-4" />
-                      {report.location.address}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
+            <ReportsView />
           )}
         </div>
       </div>
@@ -1065,6 +1354,24 @@ export const CoordinatorView: React.FC <{ initialTab?: string }> = ({ initialTab
         isOpen={showPlanningModal}
         onClose={() => setShowPlanningModal(false)}
       />
+
+      {/* Modal de gestion avancée des schedules */}
+      {showScheduleModal && (
+        <PlanningModal 
+          isOpen={showScheduleModal}
+          onClose={() => {
+            setShowScheduleModal(false);
+            setSelectedSchedule(null);
+            setScheduleModalMode('create');
+          }}
+          schedule={selectedSchedule}
+          mode={scheduleModalMode}
+          onSubmit={scheduleModalMode === 'create' 
+            ? handleCreateSchedule 
+            : (data) => handleUpdateSchedule(selectedSchedule!.id, data)
+          }
+        />
+      )}
 
       {/* Modal de gestion des équipes */}
       <TeamModal 
