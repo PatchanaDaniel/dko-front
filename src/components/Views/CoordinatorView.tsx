@@ -17,14 +17,15 @@ import {
   DollarSign,
   Activity,
   Crown,
-  Trash2
+  Trash2,
+  X
 } from 'lucide-react';
 import { mockReports, mockTrucks, mockStatistics, mockCollectionPoints, detailedStatistics } from '../../data/mockData';
 import { PlanningModal } from '../Common/PlanningModal';
 import { TeamModal } from '../Common/TeamModal';
 import ReportsView from './ReportsView';
-import { Team, User, Schedule, Truck as TruckType } from '../../types';
-import { trucksAPI, usersAPI, teamsAPI, schedulesAPI } from '../../services/api';
+import { Team, User, Schedule, Truck as TruckType, CollectionPoint } from '../../types';
+import { trucksAPI, usersAPI, teamsAPI, schedulesAPI, collectionPointsAPI } from '../../services/api';
 
 export const CoordinatorView: React.FC <{ initialTab?: string }> = ({ initialTab = 'dashboard' }) => {
   const [activeTab, setActiveTab] = useState(initialTab);
@@ -57,9 +58,16 @@ export const CoordinatorView: React.FC <{ initialTab?: string }> = ({ initialTab
   const [scheduleModalMode, setScheduleModalMode] = useState<'create' | 'edit'>('create');
   const [showScheduleModal, setShowScheduleModal] = useState(false);
 
+  // State for collection points CRUD
+  const [collectionPoints, setCollectionPoints] = useState<CollectionPoint[]>([]);
+  const [loadingPoints, setLoadingPoints] = useState(true);
+  const [pointForm, setPointForm] = useState<Partial<CollectionPoint> | null>(null);
+  const [pointModalMode, setPointModalMode] = useState<'create' | 'edit'>('create');
+  const [showPointModal, setShowPointModal] = useState(false);
+  const [pointStatusFilter, setPointStatusFilter] = useState<string>('all');
+
   // Données pour le coordinateur
   const pendingReports = mockReports.filter(r => r.status === 'pending');
-  const inProgressReports = mockReports.filter(r => r.status === 'in_progress');
   // Calculs basés sur les vraies données
   const today = new Date().toISOString().split('T')[0];
   const todaySchedules = schedules.filter(s => s.date === today);
@@ -136,6 +144,19 @@ export const CoordinatorView: React.FC <{ initialTab?: string }> = ({ initialTab
     }
   }, [activeTab]);
 
+  // Load collection points from API
+  useEffect(() => {
+    if (activeTab === 'points') {
+      setLoadingPoints(true);
+      collectionPointsAPI.getAll().then(res => {
+        if (res.success && res.data?.results) {
+          setCollectionPoints(res.data.results);
+        }
+        setLoadingPoints(false);
+      });
+    }
+  }, [activeTab]);
+
   // CRUD handlers
   const handleCreateTruck = async (truck: Partial<TruckType>) => {
     const res = await trucksAPI.create(truck as any);
@@ -193,7 +214,9 @@ export const CoordinatorView: React.FC <{ initialTab?: string }> = ({ initialTab
       team_id: schedule.team_id || '',
       team: schedule.team || '',
       date: schedule.date || '',
-      route: schedule.route || [],
+      route: schedule.route ? (Array.isArray(schedule.route) && schedule.route.length > 0 
+        ? schedule.route.map(r => typeof r === 'string' ? r : r.id || r.collection_point?.id || r)
+        : []) : [],
       truck: schedule.truck || '',
       start_time: schedule.start_time || '',
       estimated_end_time: schedule.estimated_end_time || '',
@@ -220,6 +243,38 @@ export const CoordinatorView: React.FC <{ initialTab?: string }> = ({ initialTab
     const res = await schedulesAPI.delete(id);
     if (res.success) {
       setSchedules(prev => prev.filter(s => s.id !== id));
+    }
+  };
+
+  // Collection Points CRUD handlers
+  const handleCreatePoint = async (point: Partial<CollectionPoint>) => {
+    const res = await collectionPointsAPI.create(point as any);
+    if (res.success && res.data) {
+      setCollectionPoints(prev => [...prev, res.data]);
+      setShowPointModal(false);
+    }
+  };
+
+  const handleUpdatePoint = async (id: string, updates: Partial<CollectionPoint>) => {
+    const res = await collectionPointsAPI.update(id, updates);
+    if (res.success && res.data) {
+      setCollectionPoints(prev => prev.map(p => p.id === id ? res.data : p));
+      setShowPointModal(false);
+    }
+  };
+
+  const handleDeletePoint = async (id: string) => {
+    if (!window.confirm('Supprimer ce point de collecte ?')) return;
+    const res = await collectionPointsAPI.delete(id);
+    if (res.success) {
+      setCollectionPoints(prev => prev.filter(p => p.id !== id));
+    }
+  };
+
+  const handleUpdatePointStatus = async (id: string, status: CollectionPoint['status']) => {
+    const res = await collectionPointsAPI.updateStatus(id, status);
+    if (res.success && res.data) {
+      setCollectionPoints(prev => prev.map(p => p.id === id ? res.data : p));
     }
   };
 
@@ -301,6 +356,7 @@ export const CoordinatorView: React.FC <{ initialTab?: string }> = ({ initialTab
               { id: 'statistics', label: 'Statistiques', icon: BarChart3 },
               { id: 'teams', label: 'Équipes', icon: Users },
               { id: 'trucks', label: 'Camions', icon: Truck },
+              { id: 'points', label: 'Points de collecte', icon: MapPin },
               { id: 'reports', label: 'Signalements', icon: ClipboardList },
             ].map((tab) => {
               const Icon = tab.icon;
@@ -1171,7 +1227,7 @@ export const CoordinatorView: React.FC <{ initialTab?: string }> = ({ initialTab
                       <div className="flex justify-between items-start">
                         <div className="flex-1">
                           <h3 className="font-semibold text-gray-900">{truck.plate_number || truck.plate_number}</h3>
-                          <p className="text-gray-600">Conducteur: {truck.driverName || truck.driver_name}</p>
+                          <p className="text-gray-600">Conducteur: {truck.driver_name}</p>
                           <div className="mt-2 text-sm text-gray-600">
                             Points assignés: {truck.route?.length ?? 0}
                             {truck.estimatedTime && (
@@ -1192,7 +1248,17 @@ export const CoordinatorView: React.FC <{ initialTab?: string }> = ({ initialTab
                         <button
                           className="text-blue-600 hover:text-blue-700 text-sm"
                           onClick={() => {
-                            setTruckForm(truck);
+                            // Mapper correctement les données du camion pour l'édition
+                            const formData = {
+                              ...truck,
+                              driver: truck.driver || truck.driverId || '',
+                              driverId: truck.driver || truck.driverId || '',
+                              current_location: truck.current_location || {
+                                latitude: truck.current_latitude || 0,
+                                longitude: truck.current_longitude || 0
+                              }
+                            };
+                            setTruckForm(formData);
                             setTruckModalMode('edit');
                             setShowTruckModal(true);
                           }}
@@ -1233,8 +1299,16 @@ export const CoordinatorView: React.FC <{ initialTab?: string }> = ({ initialTab
                         <label className="block text-sm font-medium mb-1">Conducteur</label>
                         <select
                           className="w-full border rounded px-3 py-2"
-                          value={truckForm?.driverId || truckForm?.driver || ''}
-                          onChange={e => setTruckForm(f => ({ ...f, driverId: e.target.value }))}
+                          value={truckForm?.driver || truckForm?.driverId || ''}
+                          onChange={e => {
+                            const selectedUser = collectors.find(u => u.id === e.target.value);
+                            setTruckForm(f => ({ 
+                              ...f, 
+                              driver: e.target.value,
+                              driverId: e.target.value,
+                              driver_name: selectedUser ? selectedUser.name : ''
+                            }));
+                          }}
                           required
                         >
                           <option value="">Sélectionner un conducteur</option>
@@ -1245,15 +1319,6 @@ export const CoordinatorView: React.FC <{ initialTab?: string }> = ({ initialTab
                           ))}
                         </select>
                       </div>
-                      {/* Affiche le nom du conducteur si disponible (pour édition) */}
-                      {truckForm?.driverName || truckForm?.driver_name ? (
-                        <div>
-                          <label className="block text-sm font-medium mb-1">Nom conducteur</label>
-                          <div className="px-3 py-2 border rounded bg-gray-50 text-gray-700">
-                            {truckForm.driverName || truckForm.driver_name}
-                          </div>
-                        </div>
-                      ) : null}
                       <div>
                         <label className="block text-sm font-medium mb-1">Immatriculation</label>
                         <input
@@ -1270,7 +1335,7 @@ export const CoordinatorView: React.FC <{ initialTab?: string }> = ({ initialTab
                           type="number"
                           step="any"
                           className="w-full border rounded px-3 py-2"
-                          value={truckForm?.current_location?.latitude ?? truckForm?.current_latitude ?? ''}
+                          value={truckForm?.current_location?.latitude ?? ''}
                           onChange={e => setTruckForm(f => ({
                             ...f,
                             current_location: {
@@ -1286,7 +1351,7 @@ export const CoordinatorView: React.FC <{ initialTab?: string }> = ({ initialTab
                           type="number"
                           step="any"
                           className="w-full border rounded px-3 py-2"
-                          value={truckForm?.current_location?.longitude ?? truckForm?.current_longitude ?? ''}
+                          value={truckForm?.current_location?.longitude ?? ''}
                           onChange={e => setTruckForm(f => ({
                             ...f,
                             current_location: {
@@ -1317,7 +1382,7 @@ export const CoordinatorView: React.FC <{ initialTab?: string }> = ({ initialTab
                         <input
                           type="number"
                           className="w-full border rounded px-3 py-2"
-                          value={truckForm?.estimatedTime ?? truckForm?.estimated_time ?? ''}
+                          value={truckForm?.estimatedTime ?? ''}
                           onChange={e => setTruckForm(f => ({ ...f, estimatedTime: parseInt(e.target.value, 10) }))}
                         />
                       </div>
@@ -1334,6 +1399,262 @@ export const CoordinatorView: React.FC <{ initialTab?: string }> = ({ initialTab
                           className="px-4 py-2 bg-blue-600 text-white rounded"
                         >
                           {truckModalMode === 'create' ? 'Créer' : 'Enregistrer'}
+                        </button>
+                      </div>
+                    </form>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {activeTab === 'points' && (
+            <div className="space-y-6">
+              <div className="flex justify-between items-center">
+                <h2 className="text-lg font-semibold text-gray-900">Gestion des points de collecte</h2>
+                <div className="flex items-center space-x-4">
+                  <select
+                    value={pointStatusFilter}
+                    onChange={(e) => setPointStatusFilter(e.target.value)}
+                    className="border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="all">Tous les statuts</option>
+                    <option value="empty">Vide</option>
+                    <option value="quarter">1/4 plein</option>
+                    <option value="half">1/2 plein</option>
+                    <option value="full">Plein</option>
+                    <option value="overflow">Débordement</option>
+                  </select>
+                  <button
+                    onClick={() => {
+                      setPointForm({
+                        name: '',
+                        address: '',
+                        latitude: 0,
+                        longitude: 0,
+                        status: 'empty',
+                        type: 'bin'
+                      });
+                      setPointModalMode('create');
+                      setShowPointModal(true);
+                    }}
+                    className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
+                  >
+                    <Plus className="mr-2 h-5 w-5" />
+                    Nouveau point
+                  </button>
+                </div>
+              </div>
+
+              {/* Statistiques rapides */}
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+                <div className="bg-white border border-gray-200 rounded-lg p-4">
+                  <div className="text-2xl font-bold text-gray-900">
+                    {collectionPoints.length}
+                  </div>
+                  <div className="text-sm text-gray-600">Points totaux</div>
+                </div>
+                <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+                  <div className="text-2xl font-bold text-green-800">
+                    {collectionPoints.filter(p => p.status === 'empty').length}
+                  </div>
+                  <div className="text-sm text-green-600">Vides</div>
+                </div>
+                <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+                  <div className="text-2xl font-bold text-yellow-800">
+                    {collectionPoints.filter(p => ['quarter', 'half'].includes(p.status)).length}
+                  </div>
+                  <div className="text-sm text-yellow-600">Partiellement pleins</div>
+                </div>
+                <div className="bg-orange-50 border border-orange-200 rounded-lg p-4">
+                  <div className="text-2xl font-bold text-orange-800">
+                    {collectionPoints.filter(p => p.status === 'full').length}
+                  </div>
+                  <div className="text-sm text-orange-600">Pleins</div>
+                </div>
+                <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+                  <div className="text-2xl font-bold text-red-800">
+                    {collectionPoints.filter(p => p.status === 'overflow').length}
+                  </div>
+                  <div className="text-sm text-red-600">Débordement</div>
+                </div>
+              </div>
+
+              {/* Liste des points */}
+              <div className="space-y-4">
+                {loadingPoints ? (
+                  <div className="text-center text-gray-500 py-8">Chargement des points de collecte...</div>
+                ) : (
+                  collectionPoints
+                    .filter(point => pointStatusFilter === 'all' || point.status === pointStatusFilter)
+                    .map((point) => (
+                    <div key={point.id} className="bg-white border border-gray-200 rounded-lg p-6">
+                      <div className="flex justify-between items-start">
+                        <div className="flex-1">
+                          <h3 className="font-semibold text-gray-900 flex items-center">
+                            <MapPin className="mr-2 h-5 w-5 text-blue-600" />
+                            {point.name}
+                          </h3>
+                          <p className="text-gray-600 mt-1">{point.address}</p>
+                          <div className="mt-2 flex items-center space-x-4 text-sm text-gray-600">
+                            <span>Type: {point.type === 'bin' ? 'Bac' : point.type === 'container' ? 'Conteneur' : 'Dépôt'}</span>
+                            <span>Coordonnées: {point.latitude?.toFixed(4)}, {point.longitude?.toFixed(4)}</span>
+                          </div>
+                        </div>
+                        <div className="flex items-center space-x-2">
+                          <select
+                            value={point.status}
+                            onChange={(e) => handleUpdatePointStatus(point.id, e.target.value as CollectionPoint['status'])}
+                            className={`px-3 py-1 text-sm font-medium rounded-full border-0 ${
+                              point.status === 'empty' ? 'bg-green-100 text-green-800' :
+                              point.status === 'quarter' ? 'bg-yellow-100 text-yellow-800' :
+                              point.status === 'half' ? 'bg-orange-100 text-orange-800' :
+                              point.status === 'full' ? 'bg-red-100 text-red-800' :
+                              'bg-red-200 text-red-900'
+                            }`}
+                          >
+                            <option value="empty">Vide</option>
+                            <option value="quarter">1/4</option>
+                            <option value="half">1/2</option>
+                            <option value="full">Plein</option>
+                            <option value="overflow">Débordement</option>
+                          </select>
+                          <button 
+                            onClick={() => {
+                              setPointForm(point);
+                              setPointModalMode('edit');
+                              setShowPointModal(true);
+                            }}
+                            className="text-blue-600 hover:text-blue-700"
+                          >
+                            <Edit className="h-4 w-4" />
+                          </button>
+                          <button 
+                            onClick={() => handleDeletePoint(point.id)}
+                            className="text-red-600 hover:text-red-700"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+
+              {/* Modal de création/édition */}
+              {showPointModal && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-30">
+                  <div className="bg-white rounded-lg shadow-lg p-6 w-full max-w-md">
+                    <div className="flex justify-between items-center mb-4">
+                      <h3 className="text-lg font-semibold">
+                        {pointModalMode === 'create' ? 'Nouveau point de collecte' : 'Modifier le point'}
+                      </h3>
+                      <button
+                        onClick={() => setShowPointModal(false)}
+                        className="text-gray-400 hover:text-gray-600"
+                      >
+                        <X className="h-6 w-6" />
+                      </button>
+                    </div>
+                    <form
+                      onSubmit={e => {
+                        e.preventDefault();
+                        if (pointModalMode === 'create') {
+                          handleCreatePoint(pointForm!);
+                        } else if (pointForm && pointForm.id) {
+                          handleUpdatePoint(pointForm.id, pointForm);
+                        }
+                      }}
+                      className="space-y-4"
+                    >
+                      <div>
+                        <label className="block text-sm font-medium mb-1">Nom du point</label>
+                        <input
+                          type="text"
+                          className="w-full border rounded px-3 py-2"
+                          value={pointForm?.name || ''}
+                          onChange={e => setPointForm(f => ({ ...f, name: e.target.value }))}
+                          required
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium mb-1">Adresse</label>
+                        <input
+                          type="text"
+                          className="w-full border rounded px-3 py-2"
+                          value={pointForm?.address || ''}
+                          onChange={e => setPointForm(f => ({ ...f, address: e.target.value }))}
+                          required
+                        />
+                      </div>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-sm font-medium mb-1">Latitude</label>
+                          <input
+                            type="number"
+                            step="any"
+                            className="w-full border rounded px-3 py-2"
+                            value={pointForm?.latitude || ''}
+                            onChange={e => setPointForm(f => ({ ...f, latitude: parseFloat(e.target.value) }))}
+                            required
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium mb-1">Longitude</label>
+                          <input
+                            type="number"
+                            step="any"
+                            className="w-full border rounded px-3 py-2"
+                            value={pointForm?.longitude || ''}
+                            onChange={e => setPointForm(f => ({ ...f, longitude: parseFloat(e.target.value) }))}
+                            required
+                          />
+                        </div>
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium mb-1">Type</label>
+                        <select
+                          className="w-full border rounded px-3 py-2"
+                          value={pointForm?.type || ''}
+                          onChange={e => setPointForm(f => ({ ...f, type: e.target.value as any }))}
+                          required
+                        >
+                          <option value="">Sélectionner</option>
+                          <option value="bin">Bac</option>
+                          <option value="container">Conteneur</option>
+                          <option value="depot">Dépôt</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium mb-1">Statut</label>
+                        <select
+                          className="w-full border rounded px-3 py-2"
+                          value={pointForm?.status || ''}
+                          onChange={e => setPointForm(f => ({ ...f, status: e.target.value as any }))}
+                          required
+                        >
+                          <option value="">Sélectionner</option>
+                          <option value="empty">Vide</option>
+                          <option value="quarter">1/4 plein</option>
+                          <option value="half">1/2 plein</option>
+                          <option value="full">Plein</option>
+                          <option value="overflow">Débordement</option>
+                        </select>
+                      </div>
+                      <div className="flex justify-end space-x-2">
+                        <button
+                          type="button"
+                          className="px-4 py-2 bg-gray-200 rounded"
+                          onClick={() => setShowPointModal(false)}
+                        >
+                          Annuler
+                        </button>
+                        <button
+                          type="submit"
+                          className="px-4 py-2 bg-blue-600 text-white rounded"
+                        >
+                          {pointModalMode === 'create' ? 'Créer' : 'Enregistrer'}
                         </button>
                       </div>
                     </form>

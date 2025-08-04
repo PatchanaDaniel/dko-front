@@ -1,9 +1,9 @@
 import React, { useEffect, useState } from 'react';
-import { Calendar, MapPin, AlertTriangle, CheckCircle, Clock, Truck, Plus, Navigation, Wrench, Locate, Wifi, Users, Eye, ArrowLeft } from 'lucide-react';
+import { Calendar, MapPin, AlertTriangle, CheckCircle, Clock, Truck as TruckIcon, Plus, Navigation, Wrench, Locate, Wifi, Users, Eye, ArrowLeft, RefreshCw } from 'lucide-react';
 import { IncidentModal } from '../Common/IncidentModal';
 import { useAuth } from '../../context/AuthContext';
 import { trucksAPI, collectionPointsAPI, incidentsAPI, schedulesAPI, teamsAPI } from '../../services/api';
-import { Incident, Schedule, Team, ScheduleRoute } from '../../types';
+import { Incident, Schedule, Team, Truck } from '../../types';
 
 export const CollectorView: React.FC = () => {
   const [activeTab, setActiveTab] = useState('planning');
@@ -25,8 +25,28 @@ export const CollectorView: React.FC = () => {
   const [activeIncidents, setActiveIncidents] = useState<Incident[]>([]);
   const [weeklySchedules, setWeeklySchedules] = useState<Schedule[]>([]);
   const [loadingSchedules, setLoadingSchedules] = useState(false);
-  const [teams, setTeams] = useState<Team[]>([]);
   const [currentTeam, setCurrentTeam] = useState<Team | null>(null);
+  const [trucks, setTrucks] = useState<Truck[]>([]);
+  const [loadingTeam, setLoadingTeam] = useState(false);
+  const [lastSyncTime, setLastSyncTime] = useState<Date | null>(null);
+
+  useEffect(() => {
+    const fetchTrucks = async () => {
+      try {
+        const response = await trucksAPI.getAll();
+        if (response.success && response.data?.results) {
+          setTrucks(response.data.results);
+          console.log('Camions chargés:', response.data.results);
+        } else {
+          setTrucks([]);
+        }
+      } catch (error) {
+        console.error('Erreur lors du chargement des camions:', error);
+        setTrucks([]);
+      }
+    };
+    fetchTrucks();
+  }, []);
 
   useEffect(() => {
     const fetchIncidents = async () => {
@@ -41,44 +61,340 @@ export const CollectorView: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    const fetchTeams = async () => {
+    const fetchTeamData = async () => {
+      if (!userTeamId) return;
+      
+      setLoadingTeam(true);
       try {
-        const response = await teamsAPI.getAll();
-        if (response.success && response.data?.results) {
-          setTeams(response.data.results);
-          const userTeam = response.data.results.find(team => team.id === userTeamId);
-          setCurrentTeam(userTeam || null);
+        console.log('Fetching team data for team ID:', userTeamId);
+        
+        // Récupérer les données de l'équipe
+        const teamsResponse = await teamsAPI.getAll();
+        if (teamsResponse.success && teamsResponse.data?.results) {
+          const userTeam = teamsResponse.data.results.find(team => team.id === userTeamId);
+          if (userTeam) {
+            console.log('Found team:', userTeam);
+            setCurrentTeam(userTeam);
+          } else {
+            console.log('Team not found with ID:', userTeamId);
+            // Créer un objet d'équipe par défaut si non trouvé
+            setCurrentTeam({
+              id: userTeamId,
+              name: `Équipe ${userTeamId}`,
+              leaderId: user?.id || '',
+              leader_name: user?.name || 'Chef d\'équipe',
+              status: 'active',
+              specialization: 'general',
+              createdAt: new Date().toISOString(),
+              members: []
+            });
+          }
         }
       } catch (error) {
-        console.error('Erreur lors du chargement des équipes:', error);
+        console.error('Erreur lors du chargement des données d\'équipe:', error);
+        // Créer un objet d'équipe par défaut en cas d'erreur
+        setCurrentTeam({
+          id: userTeamId,
+          name: `Équipe ${userTeamId}`,
+          leaderId: user?.id || '',
+          leader_name: user?.name || 'Chef d\'équipe',
+          status: 'active',
+          specialization: 'general',
+          createdAt: new Date().toISOString(),
+          members: []
+        });
+      } finally {
+        setLoadingTeam(false);
       }
     };
-    fetchTeams();
+    
+    fetchTeamData();
   }, [userTeamId]);
 
-  useEffect(() => {
-    const fetchSchedules = async () => {
-      setLoadingSchedules(true);
-      try {
-        const response = await schedulesAPI.getAll();
-        if (response.success && response.data?.results) {
-          const teamSchedules = response.data.results.filter(schedule => 
-            schedule.team_id === userTeamId || schedule.team === userTeamId
-          );
-          setWeeklySchedules(teamSchedules);
-          console.log('Plannings de l\'équipe chargés:', teamSchedules);
-        } else {
-          setWeeklySchedules([]);
+  // Fonction pour rafraîchir les données de l'équipe
+  const refreshTeamData = async () => {
+    if (!userTeamId) return;
+    
+    setLoadingTeam(true);
+    try {
+      const [teamsResponse, schedulesResponse] = await Promise.all([
+        teamsAPI.getAll(),
+        schedulesAPI.getAll()
+      ]);
+      
+      if (teamsResponse.success && teamsResponse.data?.results) {
+        const userTeam = teamsResponse.data.results.find(team => team.id === userTeamId);
+        if (userTeam) {
+          setCurrentTeam(userTeam);
+          console.log('Team data refreshed:', userTeam);
         }
-      } catch (error) {
-        console.error('Erreur lors du chargement des plannings:', error);
+      }
+    } catch (error) {
+      console.error('Erreur lors du rafraîchissement des données d\'équipe:', error);
+    } finally {
+      setLoadingTeam(false);
+    }
+  };
+
+  // Fonction pour rafraîchir les données des plannings
+  const refreshScheduleData = async () => {
+    if (!userTeamId) return;
+    
+    setLoadingSchedules(true);
+    try {
+      // Récupérer les plannings et les points de collecte en parallèle
+      const [schedulesResponse, collectionPointsResponse] = await Promise.all([
+        schedulesAPI.getAll(),
+        collectionPointsAPI.getAll()
+      ]);
+
+      if (schedulesResponse.success && schedulesResponse.data?.results) {
+        const teamSchedules = schedulesResponse.data.results.filter(schedule => 
+          schedule.team_id === userTeamId || schedule.team === userTeamId
+        );
+        setWeeklySchedules(teamSchedules);
+        
+        // Créer un map des points de collecte pour une recherche rapide
+        const collectionPointsMap = new Map();
+        if (collectionPointsResponse.success && collectionPointsResponse.data?.results) {
+          collectionPointsResponse.data.results.forEach(point => {
+            collectionPointsMap.set(point.id, point);
+          });
+        }
+        
+        // Synchroniser les points collectés avec les données actuelles du backend
+        const updatedCompletedPoints: string[] = [];
+        const pointStatusMap = new Map();
+        
+        teamSchedules.forEach(schedule => {
+          schedule.route?.forEach(routePoint => {
+            const pointId = routePoint.collection_point?.id || routePoint.id;
+            
+            // Priorité: données du backend > données du planning
+            const backendPoint = collectionPointsMap.get(pointId);
+            const currentStatus = backendPoint?.status || routePoint.collection_point?.status;
+            
+            // Stocker le statut pour debug
+            pointStatusMap.set(pointId, {
+              name: routePoint.collection_point?.name || `Point ${pointId}`,
+              backendStatus: backendPoint?.status,
+              planningStatus: routePoint.collection_point?.status,
+              finalStatus: currentStatus
+            });
+            
+            // Si le point est marqué comme "empty" dans le backend, l'ajouter aux points collectés
+            if (currentStatus === 'empty') {
+              updatedCompletedPoints.push(pointId);
+            }
+          });
+        });
+        
+        // Debug logging pour comprendre l'état des points
+        console.log('🔍 État des points de collecte:');
+        pointStatusMap.forEach((info, pointId) => {
+          console.log(`  📍 ${info.name} (${pointId}):`, {
+            backend: info.backendStatus,
+            planning: info.planningStatus,
+            final: info.finalStatus,
+            willBeMarkedCollected: info.finalStatus === 'empty'
+          });
+        });
+        
+        // Mettre à jour les points collectés et logger les changements
+        setCompletedPoints(prev => {
+          const hasChanges = prev.length !== updatedCompletedPoints.length || 
+                           prev.some(id => !updatedCompletedPoints.includes(id)) ||
+                           updatedCompletedPoints.some(id => !prev.includes(id));
+          
+          if (hasChanges) {
+            console.log('🔄 Synchronisation des points collectés:');
+            console.log('  - Anciens points:', prev);
+            console.log('  - Nouveaux points:', updatedCompletedPoints);
+            console.log('  - Points ajoutés:', updatedCompletedPoints.filter(id => !prev.includes(id)));
+            console.log('  - Points supprimés:', prev.filter(id => !updatedCompletedPoints.includes(id)));
+            return updatedCompletedPoints;
+          }
+          return prev;
+        });
+        
+        console.log('Plannings de l\'équipe rechargés:', teamSchedules);
+        setLastSyncTime(new Date());
+      } else {
+        console.warn('Aucun planning trouvé pour l\'équipe:', userTeamId);
         setWeeklySchedules([]);
-      } finally {
-        setLoadingSchedules(false);
+      }
+    } catch (error) {
+      console.error('Erreur lors du rechargement des plannings:', error);
+    } finally {
+      setLoadingSchedules(false);
+    }
+  };
+
+  // Fonction pour forcer une synchronisation complète (avec points de collecte)
+  const forceSyncScheduleData = async () => {
+    console.log('🔄 Synchronisation forcée démarrée...');
+    await refreshScheduleData();
+    
+    // Attendre un peu et refaire la synchronisation pour s'assurer que tout est à jour
+    setTimeout(async () => {
+      console.log('🔄 Seconde synchronisation pour validation...');
+      await refreshScheduleData();
+    }, 1000);
+  };
+
+  // Fonction pour vérifier et mettre à jour automatiquement le statut des plannings
+  const checkAndUpdateScheduleStatus = async () => {
+    for (const schedule of weeklySchedules) {
+      if (schedule.status === 'in_progress') {
+        const allPointsCollected = schedule.route?.every(routePoint => {
+          const pointId = routePoint.collection_point?.id || routePoint.id;
+          return completedPoints.includes(pointId);
+        });
+        
+        if (allPointsCollected && schedule.route && schedule.route.length > 0) {
+          console.log(`🎯 Tous les points collectés pour le planning ${schedule.id}, mise à jour automatique vers 'completed'`);
+          try {
+            const response = await schedulesAPI.update(schedule.id, { status: 'completed' });
+            if (response.success) {
+              console.log(`✅ Planning ${schedule.id} automatiquement terminé`);
+            }
+          } catch (error) {
+            console.error(`❌ Erreur lors de la mise à jour automatique du planning ${schedule.id}:`, error);
+          }
+        }
       }
     }
-    fetchSchedules();
+  };
+
+  // Vérifier les statuts des plannings quand les points collectés changent
+  useEffect(() => {
+    if (completedPoints.length > 0 && weeklySchedules.length > 0) {
+      checkAndUpdateScheduleStatus();
+    }
+  }, [completedPoints, weeklySchedules]);
+
+  // Fonction pour forcer la sync de tous les points collectés
+  const forceSyncAllCollectedPoints = async () => {
+    if (completedPoints.length === 0) {
+      alert('Aucun point collecté à synchroniser');
+      return;
+    }
+
+    console.log('🔄 Force sync de tous les points collectés:', completedPoints);
+    
+    let successCount = 0;
+    let errorCount = 0;
+
+    for (const pointId of completedPoints) {
+      try {
+        console.log(`📡 Sync point ${pointId}...`);
+        await collectionPointsAPI.updateStatus(pointId, 'empty');
+        successCount++;
+        console.log(`✅ Point ${pointId} synchronisé avec succès`);
+      } catch (error) {
+        errorCount++;
+        console.error(`❌ Erreur sync point ${pointId}:`, error);
+      }
+    }
+
+    alert(`Synchronisation terminée:\n✅ Succès: ${successCount}\n❌ Erreurs: ${errorCount}`);
+    
+    // Re-synchronise les données après
+    await refreshScheduleData();
+  };
+
+  // Fonction de diagnostic pour déboguer les problèmes de synchronisation
+  const debugSyncStatus = () => {
+    console.log('🔍 DIAGNOSTIC DE SYNCHRONISATION:');
+    console.log('  - Points collectés localement:', completedPoints);
+    console.log('  - Plannings chargés:', weeklySchedules.length);
+    console.log('  - Dernière synchronisation:', lastSyncTime);
+    console.log('  - Équipe ID:', userTeamId);
+    console.log('  - User:', user);
+    
+    weeklySchedules.forEach((schedule, scheduleIndex) => {
+      console.log(`  📅 Planning ${scheduleIndex + 1}:`, {
+        id: schedule.id,
+        status: schedule.status,
+        date: schedule.date,
+        team: schedule.team_id || schedule.team,
+        totalPoints: schedule.route?.length || 0
+      });
+      
+      schedule.route?.forEach((routePoint, pointIndex) => {
+        const pointId = routePoint.collection_point?.id || routePoint.id;
+        const pointStatus = routePoint.collection_point?.status;
+        const isMarkedCompleted = completedPoints.includes(pointId);
+        console.log(`    📍 Point ${pointIndex + 1}: ID=${pointId}, Status=${pointStatus}, Completed=${isMarkedCompleted}, Name=${routePoint.collection_point?.name}`);
+      });
+      
+      const completedCount = schedule.route?.filter(routePoint => {
+        const pointId = routePoint.collection_point?.id || routePoint.id;
+        return completedPoints.includes(pointId);
+      }).length || 0;
+      
+      console.log(`    ✅ Progression: ${completedCount}/${schedule.route?.length || 0} points collectés`);
+    });
+    
+    // Vérifier la cohérence
+    const todayDate = getTodayDate();
+    const todaySchedules = weeklySchedules.filter(s => s.date === todayDate);
+    console.log('  📊 Plannings d\'aujourd\'hui:', todaySchedules.length);
+    
+    return {
+      completedPoints,
+      weeklySchedules: weeklySchedules.length,
+      todaySchedules: todaySchedules.length,
+      lastSyncTime
+    };
+  };
+
+  // Ajouter la fonction de diagnostic au window pour un accès facile depuis la console
+  useEffect(() => {
+    (window as any).debugCollectorSync = debugSyncStatus;
+    return () => {
+      delete (window as any).debugCollectorSync;
+    };
+  }, [completedPoints, weeklySchedules, lastSyncTime]);
+
+  useEffect(() => {
+    if (userTeamId) {
+      refreshScheduleData();
+    }
   }, [userTeamId]);
+
+  // Rafraîchissement automatique des plannings toutes les 30 secondes
+  useEffect(() => {
+    const interval = setInterval(() => {
+      if (userTeamId && !loadingSchedules) {
+        console.log('Rafraîchissement automatique des plannings...');
+        refreshScheduleData();
+      }
+    }, 30000); // 30 secondes
+
+    return () => clearInterval(interval);
+  }, [userTeamId, loadingSchedules]);
+
+  // Synchroniser le statut du camion avec le camion du planning du jour
+  useEffect(() => {
+    const todayTruck = getTodayTruck();
+    if (todayTruck) {
+      console.log('Synchronizing truck status with:', todayTruck);
+      setTruckStatus(todayTruck.status || 'available');
+    }
+  }, [weeklySchedules, trucks]);
+
+  // Calculer les statistiques de l'équipe
+  const getTeamStats = () => {
+    if (!currentTeam) return { memberCount: 0, activeSchedules: 0, collectionPoints: 0, completedCollections: 0 };
+    
+    const memberCount = currentTeam.members?.length || 0;
+    const activeSchedules = weeklySchedules.filter(s => s.status === 'in_progress' || s.status === 'planned').length;
+    const completedCollections = weeklySchedules.filter(s => s.status === 'completed').length;
+    const collectionPoints = weeklySchedules.reduce((total, schedule) => total + (schedule.route?.length || 0), 0);
+    
+    return { memberCount, activeSchedules, collectionPoints, completedCollections };
+  };
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -121,13 +437,7 @@ export const CollectorView: React.FC = () => {
       try {
         const response = await schedulesAPI.update(scheduleId, { status: 'in_progress' });
         if (response.success) {
-          const scheduleResponse = await schedulesAPI.getAll();
-          if (scheduleResponse.success && scheduleResponse.data?.results) {
-            const teamSchedules = scheduleResponse.data.results.filter(schedule => 
-              schedule.team_id === userTeamId || schedule.team === userTeamId
-            );
-            setWeeklySchedules(teamSchedules);
-          }
+          await refreshScheduleData();
           alert(`Route ${scheduleId} démarrée avec succès`);
         } else {
           alert('Erreur lors du démarrage de la route');
@@ -145,13 +455,7 @@ export const CollectorView: React.FC = () => {
       try {
         const response = await schedulesAPI.update(scheduleId, { status: 'completed' });
         if (response.success) {
-          const scheduleResponse = await schedulesAPI.getAll();
-          if (scheduleResponse.success && scheduleResponse.data?.results) {
-            const teamSchedules = scheduleResponse.data.results.filter(schedule => 
-              schedule.team_id === userTeamId || schedule.team === userTeamId
-            );
-            setWeeklySchedules(teamSchedules);
-          }
+          await refreshScheduleData();
           alert(`Route ${scheduleId} terminée avec succès`);
         } else {
           alert('Erreur lors de la finalisation de la route');
@@ -162,10 +466,6 @@ export const CollectorView: React.FC = () => {
       }
     };
     completeRoute();
-  };
-
-  const handleCompleteCollection = () => {
-    // Cette fonction sera implémentée plus tard si nécessaire
   };
 
   const handleViewScheduleDetails = (scheduleId: string) => {
@@ -186,34 +486,134 @@ export const CollectorView: React.FC = () => {
     setShowIncidentModal(true);
   };
 
-  const handleTruckStatusChange = async (newStatus: string) => {
-    setTruckStatus(newStatus);
-    
-    try {
-      const response = await trucksAPI.updateStatus('1', newStatus as 'collecting' | 'available' | 'maintenance' | 'offline' | 'unavailable');
-      
-      if (response.success) {
-        alert(`Statut du camion mis à jour: ${newStatus === 'collecting' ? 'En collecte' : 
-               newStatus === 'available' ? 'Disponible' : 
-               newStatus === 'maintenance' ? 'En maintenance' : 'Hors ligne'}`);
-      } else {
-        alert('Erreur lors de la mise à jour du statut');
-      }
-    } catch (error) {
-      console.error('Erreur lors de la mise à jour du statut:', error);
-      alert('Erreur lors de la mise à jour du statut');
+  const handleTabChange = (tabId: string) => {
+    setActiveTab(tabId);
+    // Synchroniser les données quand on change vers l'onglet planning
+    if (tabId === 'planning' && userTeamId) {
+      console.log('🔄 Synchronisation des données lors du changement d\'onglet vers planning');
+      forceSyncScheduleData();
     }
   };
 
-  const handleConfirmCollection = async (pointId: string, pointName: string) => {
-    if (!completedPoints.includes(pointId)) {
-      setCompletedPoints([...completedPoints, pointId]);
-      try {
-        await collectionPointsAPI.updateStatus(pointId, 'empty');
-        alert(`Collecte confirmée pour: ${pointName}`);
-      } catch (error) {
-        console.error('Erreur lors de la confirmation de collecte:', error);
+  const handleTruckStatusChange = async (newStatus: string) => {
+    try {
+      const scheduleTruckId = getTodayTruckId();
+      const databaseTruckId = getTruckDatabaseId(scheduleTruckId);
+      console.log('Updating truck status for schedule truck ID:', scheduleTruckId);
+      console.log('Using database truck ID:', databaseTruckId, 'to status:', newStatus);
+      
+      const response = await trucksAPI.updateStatus(databaseTruckId, newStatus as 'collecting' | 'available' | 'maintenance' | 'offline' | 'unavailable');
+      console.log('Truck status update response:', response);
+      if (response.success) {
+        // Mettre à jour le statut local
+        setTruckStatus(newStatus);
+        
+        // Rafraîchir les données des camions pour avoir le statut à jour
+        const trucksResponse = await trucksAPI.getAll();
+        if (trucksResponse.success && trucksResponse.data?.results) {
+          setTrucks(trucksResponse.data.results);
+        }
+        
+        alert(`Statut du camion mis à jour: ${newStatus === 'collecting' ? 'En collecte' : 
+               newStatus === 'available' ? 'Disponible' : 
+               newStatus === 'maintenance' ? 'En maintenance' : 
+               newStatus === 'offline' ? 'Hors ligne' : 'Indisponible'}`);
+      } else {
+        alert('Erreur lors de la mise à jour du statut 1');
       }
+    } catch (error) {
+      console.error('Erreur lors de la mise à jour du statut 2:', error);
+      alert('Erreur lors de la mise à jour du statut 3');
+    }
+  };
+
+  const handleConfirmCollection = async (pointId: string, pointName: string, routePointId?: string) => {
+    if (!completedPoints.includes(pointId)) {
+      // Mettre à jour immédiatement l'interface utilisateur pour un feedback rapide
+      setCompletedPoints(prev => [...prev, pointId]);
+      
+      try {
+        // 1. Mettre à jour le statut du point de collecte dans le backend
+        console.log('🔄 Mise à jour du point de collecte:', pointId, 'vers statut: empty');
+        const updateResponse = await collectionPointsAPI.updateStatus(pointId, 'empty');
+        console.log('✅ Réponse de mise à jour du point:', updateResponse);
+        
+        if (updateResponse.success) {
+          // 2. Trouver et mettre à jour le ScheduleRoute correspondant
+          if (routePointId) {
+            console.log('🔄 Mise à jour directe du ScheduleRoute:', routePointId);
+            try {
+              const scheduleRouteUpdateResponse = await schedulesAPI.markRoutePointCompleted(routePointId);
+              console.log('✅ Réponse mise à jour ScheduleRoute:', scheduleRouteUpdateResponse);
+              
+              if (scheduleRouteUpdateResponse.success) {
+                console.log('✅ ScheduleRoute mis à jour avec completed=true');
+              } else {
+                console.error('❌ Erreur mise à jour ScheduleRoute:', scheduleRouteUpdateResponse);
+              }
+            } catch (scheduleError) {
+              console.error('❌ Erreur lors de la mise à jour du ScheduleRoute:', scheduleError);
+            }
+          } else {
+            console.log('🔄 Recherche du ScheduleRoute pour le point:', pointId);
+            
+            for (const schedule of weeklySchedules) {
+              const routePoint = schedule.route?.find(rp => 
+                (rp.collection_point?.id === pointId) || (rp.id === pointId)
+              );
+              
+              if (routePoint && routePoint.id) {
+                console.log('📍 ScheduleRoute trouvé:', {
+                  scheduleId: schedule.id,
+                  routePointId: routePoint.id,
+                  currentCompleted: routePoint.completed
+                });
+                
+                try {
+                  const scheduleRouteUpdateResponse = await schedulesAPI.markRoutePointCompleted(routePoint.id);
+                  console.log('✅ Réponse mise à jour ScheduleRoute:', scheduleRouteUpdateResponse);
+                  
+                  if (scheduleRouteUpdateResponse.success) {
+                    console.log('✅ ScheduleRoute mis à jour avec completed=true');
+                  } else {
+                    console.error('❌ Erreur mise à jour ScheduleRoute:', scheduleRouteUpdateResponse);
+                  }
+                } catch (scheduleError) {
+                  console.error('❌ Erreur lors de la mise à jour du ScheduleRoute:', scheduleError);
+                }
+                break; // Sortir de la boucle une fois trouvé
+              }
+            }
+          }
+          
+          // 3. Attendre que le backend traite les mises à jour
+          await new Promise(resolve => setTimeout(resolve, 1000));
+          
+          // 4. Recharger les données pour synchroniser avec le backend
+          await refreshScheduleData();
+          
+          // 5. Attendre encore un peu et vérifier la synchronisation
+          setTimeout(async () => {
+            await refreshScheduleData();
+            console.log('✅ Collecte confirmée et synchronisée pour:', pointName);
+          }, 1500);
+          
+          alert(`✅ Collecte confirmée pour: ${pointName}`);
+        } else {
+          // En cas d'échec de la mise à jour, annuler le changement local
+          setCompletedPoints(prev => prev.filter(id => id !== pointId));
+          console.error('❌ Erreur de réponse lors de la mise à jour:', updateResponse);
+          alert(`❌ Erreur lors de la confirmation de collecte pour: ${pointName}\nDétails: ${updateResponse.errors || 'Erreur inconnue'}`);
+        }
+      } catch (error) {
+        console.error('❌ Erreur lors de la confirmation de collecte:', error);
+        // En cas d'erreur, annuler la mise à jour locale
+        setCompletedPoints(prev => prev.filter(id => id !== pointId));
+        alert(`❌ Erreur de connexion lors de la confirmation de collecte pour: ${pointName}\nVeuillez réessayer.`);
+      }
+    } else {
+      console.log('ℹ️ Point déjà collecté:', pointId);
+      alert(`ℹ️ Le point ${pointName} est déjà marqué comme collecté.`);
     }
   };
 
@@ -246,8 +646,33 @@ export const CollectorView: React.FC = () => {
       case 'maintenance': return <Wrench className="w-4 h-4" />;
       case 'offline': return <Clock className="w-4 h-4" />;
       case 'unavailable': return <AlertTriangle className="w-4 h-4" />;
-      default: return <Truck className="w-4 h-4" />;
+      default: return <TruckIcon className="w-4 h-4" />;
     }
+  };
+
+  const getTruckById = (truckId: string) => {
+    // First try to find by database ID, then by plate number
+    return trucks.find(truck => truck.id === truckId) || 
+           trucks.find(truck => truck.plate_number === truckId);
+  };
+
+  const getTruckDatabaseId = (truckId: string) => {
+    // Get the actual database ID for API calls
+    const truck = getTruckById(truckId);
+    return truck ? truck.id : truckId;
+  };
+
+  const getTruckDisplayInfo = (truckId: string) => {
+    console.log('getTruckDisplayInfo - Looking for truck ID:', truckId);
+    console.log('getTruckDisplayInfo - Available trucks:', trucks.map(t => ({ id: t.id, plate_number: t.plate_number })));
+    
+    const truck = getTruckById(truckId);
+    console.log('getTruckDisplayInfo - Found truck:', truck);
+    
+    if (truck) {
+      return `Camion ${truck.plate_number}${truck.driver_name ? ` (${truck.driver_name})` : ''}`;
+    }
+    return `Camion ${truckId}`;
   };
 
   const getTodayDate = () => {
@@ -255,11 +680,25 @@ export const CollectorView: React.FC = () => {
     return today.toISOString().split('T')[0];
   };
 
+  const getTodayTruck = () => {
+    const schedule = weeklySchedules.find(
+      (s) => s.date === getTodayDate() && (s.team_id === userTeamId || s.team === userTeamId)
+    );
+    if (!schedule) return null;
+    
+    const truckId = schedule.truck_id || schedule.truck;
+    return getTruckById(truckId);
+  };
+
   const getTodayTruckId = () => {
     const schedule = weeklySchedules.find(
       (s) => s.date === getTodayDate() && (s.team_id === userTeamId || s.team === userTeamId)
     );
-    return schedule?.truck || '1';
+    
+    const truckId = schedule?.truck_id|| '1';
+    console.log('getTodayTruckId - Found schedule:', schedule);
+    console.log('getTodayTruckId - Returning truck ID:', truckId);
+    return truckId;
   };
 
   const todaySchedule = weeklySchedules.filter(
@@ -274,7 +713,8 @@ export const CollectorView: React.FC = () => {
 
     setIsTracking(true);
     setLocationError(null);
-    const truckId = getTodayTruckId();
+    const scheduleTruckId = getTodayTruckId();
+    const databaseTruckId = getTruckDatabaseId(scheduleTruckId);
 
     navigator.geolocation.getCurrentPosition(
       (position) => {
@@ -283,7 +723,7 @@ export const CollectorView: React.FC = () => {
           longitude: position.coords.longitude
         };
         setCurrentLocation(location);
-        trucksAPI.updateLocation(truckId, location);
+        trucksAPI.updateLocation(databaseTruckId, location);
       },
       (error) => {
         let errorMessage = 'Erreur de géolocalisation';
@@ -311,7 +751,7 @@ export const CollectorView: React.FC = () => {
           longitude: position.coords.longitude
         };
         setCurrentLocation(location);
-        trucksAPI.updateLocation(truckId, location);
+        trucksAPI.updateLocation(databaseTruckId, location);
       },
       (error) => {
         console.error('Erreur de suivi GPS:', error);
@@ -386,7 +826,7 @@ export const CollectorView: React.FC = () => {
         <div className="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-3">
-              <Truck className="h-6 w-6 text-blue-600" />
+              <TruckIcon className="h-6 w-6 text-blue-600" />
               <div>
                 <h3 className="font-medium text-blue-900">Camion de l'équipe</h3>
                 <div className="flex items-center space-x-2">
@@ -462,7 +902,7 @@ export const CollectorView: React.FC = () => {
               return (
                 <button
                   key={tab.id}
-                  onClick={() => setActiveTab(tab.id)}
+                  onClick={() => handleTabChange(tab.id)}
                   className={`
                     flex items-center px-1 py-4 border-b-2 text-sm font-medium transition-colors
                     ${activeTab === tab.id
@@ -488,6 +928,35 @@ export const CollectorView: React.FC = () => {
                   Planning de l'Équipe {currentTeam?.name || userTeamId}
                 </h2>
                 <div className="flex items-center space-x-4">
+                  <div className="flex items-center space-x-2">
+                    <div className={`w-2 h-2 rounded-full ${loadingSchedules ? 'bg-yellow-500 animate-pulse' : 'bg-green-500'}`}></div>
+                    <span className="text-xs text-gray-500">
+                      {loadingSchedules ? 'Synchronisation...' : 
+                       lastSyncTime ? `Mis à jour: ${lastSyncTime.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}` : 'À jour'}
+                    </span>
+                    <span className="text-xs text-blue-600 font-medium">
+                      {completedPoints.length} collectés
+                    </span>
+                  </div>
+                  <button
+                    onClick={forceSyncScheduleData}
+                    disabled={loadingSchedules}
+                    className={`inline-flex items-center px-3 py-2 border border-gray-300 shadow-sm text-sm leading-4 font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 ${
+                      loadingSchedules ? 'opacity-50 cursor-not-allowed' : ''
+                    }`}
+                  >
+                    <RefreshCw className={`h-4 w-4 mr-2 ${loadingSchedules ? 'animate-spin' : ''}`} />
+                    Synchroniser
+                  </button>
+                  <button
+                    onClick={forceSyncAllCollectedPoints}
+                    disabled={completedPoints.length === 0}
+                    className={`inline-flex items-center px-3 py-2 border border-orange-300 shadow-sm text-sm leading-4 font-medium rounded-md text-orange-700 bg-orange-50 hover:bg-orange-100 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-orange-500 ${
+                      completedPoints.length === 0 ? 'opacity-50 cursor-not-allowed' : ''
+                    }`}
+                  >
+                    🔄 Force Sync ({completedPoints.length})
+                  </button>
                   {loadingSchedules && (
                     <div className="flex items-center text-sm text-gray-500">
                       <div className="animate-spin rounded-full h-4 w-4 border-2 border-blue-600 border-t-transparent mr-2"></div>
@@ -545,7 +1014,7 @@ export const CollectorView: React.FC = () => {
                         <div className="flex justify-between items-start mb-4">
                           <div>
                             <h3 className="font-medium text-gray-900">
-                              Équipe {schedule.team_name || schedule.team} - Camion {schedule.truck_id || schedule.truck}
+                              Équipe {schedule.team_name || schedule.team} - {getTruckDisplayInfo(schedule.truck_id || schedule.truck)}
                             </h3>
                             <div className="flex items-center mt-1 text-sm text-gray-600">
                               <Clock className="mr-1 h-4 w-4" />
@@ -597,7 +1066,8 @@ export const CollectorView: React.FC = () => {
                                   <button
                                     onClick={() => handleConfirmCollection(
                                       routePoint.collection_point?.id || routePoint.id, 
-                                      routePoint.collection_point?.name || `Point ${index + 1}`
+                                      routePoint.collection_point?.name || `Point ${index + 1}`,
+                                      routePoint.id // Passer l'ID du ScheduleRoute
                                     )}
                                     className="px-3 py-1 bg-blue-600 text-white text-xs rounded-md hover:bg-blue-700 transition-colors"
                                   >
@@ -679,7 +1149,7 @@ export const CollectorView: React.FC = () => {
                       </div>
                       <div>
                         <label className="block text-sm font-medium text-gray-700">Camion</label>
-                        <p className="mt-1 text-sm text-gray-900">{getSelectedSchedule()!.truck_id || getSelectedSchedule()!.truck}</p>
+                        <p className="mt-1 text-sm text-gray-900">{getTruckDisplayInfo(getSelectedSchedule()!.truck_id || getSelectedSchedule()!.truck)}</p>
                       </div>
                       <div>
                         <label className="block text-sm font-medium text-gray-700">Date</label>
@@ -897,40 +1367,62 @@ export const CollectorView: React.FC = () => {
               {/* Statut du camion */}
               <div className="bg-white border border-gray-200 rounded-lg p-6">
                 <h3 className="text-lg font-medium text-gray-900 mb-4">Statut du Camion</h3>
-                <div className="flex items-center justify-between mb-4">
-                  <div className="flex items-center space-x-3">
-                    {getTruckStatusIcon(truckStatus)}
-                    <div>
-                      <div className="font-medium text-gray-900">Camion {getTodayTruckId()}</div>
-                      <div className={`text-sm px-2 py-1 rounded-full ${getTruckStatusColor(truckStatus)}`}>
-                        {getTruckStatusText(truckStatus)}
+                {(() => {
+                  const todayTruck = getTodayTruck();
+                  if (!todayTruck) {
+                    return (
+                      <div className="text-center py-8 text-gray-500">
+                        <TruckIcon className="mx-auto h-12 w-12 text-gray-300 mb-4" />
+                        <p>Aucun camion assigné pour aujourd'hui</p>
+                        <p className="text-sm mt-1">Vérifiez le planning de l'équipe</p>
                       </div>
-                    </div>
-                  </div>
-                </div>
-                
-                <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
-                  {[
-                    { status: 'collecting', label: 'En collecte', icon: Navigation },
-                    { status: 'available', label: 'Disponible', icon: CheckCircle },
-                    { status: 'maintenance', label: 'Maintenance', icon: Wrench },
-                    { status: 'offline', label: 'Hors ligne', icon: Clock },
-                    { status: 'unavailable', label: 'Indisponible', icon: AlertTriangle },
-                  ].map(({ status, label, icon: Icon }) => (
-                    <button
-                      key={status}
-                      onClick={() => handleTruckStatusChange(status)}
-                      className={`flex items-center justify-center px-3 py-2 text-xs rounded-md transition-colors ${
-                        truckStatus === status
-                          ? 'bg-blue-600 text-white'
-                          : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                      }`}
-                    >
-                      <Icon className="w-3 h-3 mr-1" />
-                      {label}
-                    </button>
-                  ))}
-                </div>
+                    );
+                  }
+                  
+                  return (
+                    <>
+                      <div className="flex items-center justify-between mb-4">
+                        <div className="flex items-center space-x-3">
+                          {getTruckStatusIcon(todayTruck.status)}
+                          <div>
+                            <div className="font-medium text-gray-900">
+                              Camion {todayTruck.plate_number}
+                              {todayTruck.driver_name && (
+                                <span className="text-sm text-gray-600 ml-2">({todayTruck.driver_name})</span>
+                              )}
+                            </div>
+                            <div className={`text-sm px-2 py-1 rounded-full ${getTruckStatusColor(todayTruck.status)}`}>
+                              {getTruckStatusText(todayTruck.status)}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                      
+                      <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
+                        {[
+                          { status: 'collecting', label: 'En collecte', icon: Navigation },
+                          { status: 'available', label: 'Disponible', icon: CheckCircle },
+                          { status: 'maintenance', label: 'Maintenance', icon: Wrench },
+                          { status: 'offline', label: 'Hors ligne', icon: Clock },
+                          { status: 'unavailable', label: 'Indisponible', icon: AlertTriangle },
+                        ].map(({ status, label, icon: Icon }) => (
+                          <button
+                            key={status}
+                            onClick={() => handleTruckStatusChange(status)}
+                            className={`flex items-center justify-center px-3 py-2 text-xs rounded-md transition-colors ${
+                              todayTruck.status === status
+                                ? 'bg-blue-600 text-white'
+                                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                            }`}
+                          >
+                            <Icon className="w-3 h-3 mr-1" />
+                            {label}
+                          </button>
+                        ))}
+                      </div>
+                    </>
+                  );
+                })()}
               </div>
 
               {/* Suivi des points de collecte confirmés */}
@@ -1124,8 +1616,25 @@ export const CollectorView: React.FC = () => {
           {/* Onglet Équipe */}
           {activeTab === 'team' && (
             <div>
-              <h2 className="text-lg font-semibold text-gray-900 mb-6">Mon Équipe</h2>
-              {currentTeam ? (
+              <div className="flex items-center justify-between mb-6">
+                <h2 className="text-lg font-semibold text-gray-900">Mon Équipe</h2>
+                <button
+                  onClick={refreshTeamData}
+                  disabled={loadingTeam}
+                  className={`inline-flex items-center px-3 py-2 border border-gray-300 shadow-sm text-sm leading-4 font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 ${
+                    loadingTeam ? 'opacity-50 cursor-not-allowed' : ''
+                  }`}
+                >
+                  <RefreshCw className={`h-4 w-4 mr-2 ${loadingTeam ? 'animate-spin' : ''}`} />
+                  {loadingTeam ? 'Actualisation...' : 'Actualiser'}
+                </button>
+              </div>
+              {loadingTeam ? (
+                <div className="text-center py-12">
+                  <RefreshCw className="mx-auto h-8 w-8 animate-spin text-blue-600 mb-4" />
+                  <p className="text-gray-600">Chargement des données de l'équipe...</p>
+                </div>
+              ) : currentTeam ? (
                 <div className="space-y-6">
                   {/* Informations générales de l'équipe */}
                   <div className="bg-white border border-gray-200 rounded-lg p-6">
@@ -1157,22 +1666,22 @@ export const CollectorView: React.FC = () => {
                     {/* Statistiques rapides */}
                     <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
                       <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-center">
-                        <div className="text-2xl font-bold text-blue-600">{(currentTeam.members?.length || 0) + 1}</div>
+                        <div className="text-2xl font-bold text-blue-600">{getTeamStats().memberCount}</div>
                         <div className="text-sm text-blue-800">Total membres</div>
                       </div>
                       <div className="bg-green-50 border border-green-200 rounded-lg p-4 text-center">
-                        <div className="text-2xl font-bold text-green-600">{weeklySchedules.length}</div>
+                        <div className="text-2xl font-bold text-green-600">{getTeamStats().activeSchedules}</div>
                         <div className="text-sm text-green-800">Plannings actifs</div>
                       </div>
                       <div className="bg-orange-50 border border-orange-200 rounded-lg p-4 text-center">
                         <div className="text-2xl font-bold text-orange-600">
-                          {weeklySchedules.reduce((total, schedule) => total + schedule.route.length, 0)}
+                          {getTeamStats().collectionPoints}
                         </div>
                         <div className="text-sm text-orange-800">Points de collecte</div>
                       </div>
                       <div className="bg-purple-50 border border-purple-200 rounded-lg p-4 text-center">
                         <div className="text-2xl font-bold text-purple-600">
-                          {completedPoints.length}
+                          {getTeamStats().completedCollections}
                         </div>
                         <div className="text-sm text-purple-800">Collections terminées</div>
                       </div>
@@ -1277,7 +1786,7 @@ export const CollectorView: React.FC = () => {
                                 {new Date(schedule.date).toLocaleDateString('fr-FR')} - {schedule.route.length} points
                               </div>
                               <div className="text-sm text-gray-600">
-                                {schedule.start_time} - {schedule.estimated_end_time} | Camion {schedule.truck_id || schedule.truck}
+                                {schedule.start_time} - {schedule.estimated_end_time} | {getTruckDisplayInfo(schedule.truck_id || schedule.truck)}
                               </div>
                             </div>
                             <span className={`px-2 py-1 text-xs font-medium rounded-full ${getStatusColor(schedule.status)}`}>

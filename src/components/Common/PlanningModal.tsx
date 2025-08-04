@@ -47,7 +47,7 @@ export const PlanningModal: React.FC<PlanningModalProps> = ({
       setTruckId(schedule.truck || '');
       setStartTime(schedule.start_time || '');
       setStatus(schedule.status || 'planned');
-      setOrderedPoints(schedule.route || []);
+      setOrderedPoints(schedule.route ? schedule.route.map(r => r.collection_point) : []);
     } else if (isOpen && mode === 'create') {
       // Réinitialiser les champs en mode création
       setTeamId('');
@@ -130,7 +130,7 @@ export const PlanningModal: React.FC<PlanningModalProps> = ({
         date,
         start_time: startTime,
         estimated_end_time: calculateEndTime(startTime, orderedPoints.length),
-        route: orderedPoints,
+        route: orderedPoints.map(point => point.id), // Envoi seulement les IDs
         status: status
       };
 
@@ -172,6 +172,33 @@ export const PlanningModal: React.FC<PlanningModalProps> = ({
     const endTime = new Date();
     endTime.setHours(hours, minutes + estimatedDuration);
     return endTime.toTimeString().slice(0, 5);
+  };
+
+  // Helper function pour afficher le statut du camion
+  const getTruckStatusLabel = (status: string) => {
+    switch (status) {
+      case 'collecting': return 'En collecte';
+      case 'available': return 'Disponible';
+      case 'maintenance': return 'En maintenance';
+      case 'offline': return 'Hors ligne';
+      case 'unavailable': return 'Indisponible';
+      default: return 'Statut inconnu';
+    }
+  };
+
+  // Helper function pour vérifier si un camion peut être utilisé pour un planning
+  const canUseTruckForScheduling = (truck: TruckType) => {
+    // Pour la création : seuls les camions disponibles
+    // Pour l'édition : permettre plus de flexibilité
+    if (mode === 'edit') {
+      return truck.status !== 'maintenance'; // En édition, on peut utiliser des camions sauf ceux en maintenance
+    }
+    return truck.status === 'available';
+  };
+
+  // Helper function pour obtenir un camion sélectionné
+  const getSelectedTruck = () => {
+    return trucks.find(t => t.id === truckId);
   };
 
   if (!isOpen) return null;
@@ -264,20 +291,59 @@ export const PlanningModal: React.FC<PlanningModalProps> = ({
                   <option value="">Sélectionner un camion</option>
                   {trucks.map((truck) => (
                     <option key={truck.id} value={truck.id}>
-                      {truck.plate_number} - {truck.driverName} 
+                      {truck.plate_number} - {truck.driver_name} 
                       {truck.status !== 'available' && (
-                        ` (${truck.status === 'collecting' ? 'En collecte' : 
-                             truck.status === 'maintenance' ? 'Maintenance' : 
-                             truck.status === 'offline' ? 'Hors ligne' : 'Indisponible'})`
+                        ` (${getTruckStatusLabel(truck.status)})`
                       )}
                     </option>
                   ))}
                 </select>
-                {truckId && trucks.find(t => t.id === truckId)?.status !== 'available' && (
-                  <p className="mt-1 text-sm text-amber-600">
-                    ⚠️ Ce camion n'est pas disponible actuellement
-                  </p>
-                )}
+                {!!truckId && (() => {
+                  const selectedTruck = getSelectedTruck();
+                  return selectedTruck && !canUseTruckForScheduling(selectedTruck) && (
+                    <div className="mt-1">
+                      <p className="text-sm text-red-600 font-medium">
+                        ⚠️ Ce camion n'est pas disponible actuellement. 
+                        {mode === 'create' ? ' Impossible de créer un planning.' : ' Modification avec précaution.'}
+                      </p>
+                      <p className="text-xs text-gray-600">
+                        Statut actuel : <span className="font-medium">{getTruckStatusLabel(selectedTruck.status)}</span>
+                      </p>
+                      {selectedTruck.status === 'unavailable' && (
+                        <div className="mt-2">
+                          <p className="text-xs text-blue-600 mb-2">
+                            💡 Conseil : Changez le statut du camion pour pouvoir créer des plannings.
+                          </p>
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              try {
+                                const response = await trucksAPI.update(selectedTruck.id, { status: 'available' });
+                                if (response.success) {
+                                  // Mettre à jour la liste des camions locale
+                                  setTrucks(prev => prev.map(t => 
+                                    t.id === selectedTruck.id 
+                                      ? { ...t, status: 'available' as const }
+                                      : t
+                                  ));
+                                  alert('Statut du camion mis à jour vers "Disponible"');
+                                } else {
+                                  alert('Erreur lors de la mise à jour du statut');
+                                }
+                              } catch (error) {
+                                console.error('Erreur:', error);
+                                alert('Erreur lors de la mise à jour du statut');
+                              }
+                            }}
+                            className="px-3 py-1 text-xs bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
+                          >
+                            Rendre disponible
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
               </div>
 
               {/* Heure de début */}
@@ -500,7 +566,18 @@ export const PlanningModal: React.FC<PlanningModalProps> = ({
               </button>
               <button
                 type="submit"
-                disabled={!teamId || !date || !truckId || !startTime || orderedPoints.length === 0 || isSubmitting}
+                disabled={
+                  !teamId || 
+                  !date || 
+                  !truckId || 
+                  !startTime || 
+                  orderedPoints.length === 0 || 
+                  isSubmitting || 
+                  (() => {
+                    const selectedTruck = getSelectedTruck();
+                    return selectedTruck && !canUseTruckForScheduling(selectedTruck);
+                  })()
+                }
                 className="px-6 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
                 {isSubmitting 

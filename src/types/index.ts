@@ -33,17 +33,21 @@ export interface CollectionPoint {
   address: string;
   latitude: number;
   longitude: number;
-  type: 'bin' | 'container' | 'recycling';
-  status: 'empty' | 'half' | 'full' | 'overflow';
-  lastCollection: string;
-  nextCollection: string;
+  type: 'bin' | 'container' | 'depot' | 'recycling';
+  status: 'empty' | 'quarter' | 'half' | 'full' | 'overflow';
+  capacity?: number;
+  lastCollection?: string;
+  nextCollection?: string;
+  collections_this_month?: number;
 }
 
 export interface Truck {
   id: string;
   plate_number: string;
+  driver?: string; // ID du conducteur
+  driverId?: string; // Alias pour driver
   driver_name: string;
-  status: 'collecting' | 'available' | 'maintenance' | 'offline';
+  status: 'collecting' | 'available' | 'maintenance' | 'offline' | 'unavailable';
   current_location?: {
     latitude: number;
     longitude: number;

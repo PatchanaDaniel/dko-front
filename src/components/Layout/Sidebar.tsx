@@ -8,7 +8,6 @@ import {
   Users, 
   Settings,
   Home,
-  ClipboardList,
   MapPin
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
@@ -61,6 +60,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeView, onViewChange, isOp
           { id: 'reports', label: 'Signalements', icon: AlertTriangle },
           { id: 'teams', label: 'Équipes', icon: Users },
           { id: 'trucks', label: 'Camions', icon: Truck },
+          { id: 'points', label: 'Points de collecte', icon: MapPin },
           { id: 'statistics', label: 'Statistiques', icon: BarChart3 },
         ];
 
@@ -154,9 +154,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeView, onViewChange, isOp
               </div>
               <div className="text-sm font-medium text-gray-900">
                 <div>
-                  {user.first_name && user.last_name 
-                    ? `${user.first_name} ${user.last_name}` 
-                    : user.name || user.email}
+                  {user.name || user.email}
                 </div>
                 <div className="text-xs text-gray-500 mt-1">
                   {user.role === 'citizen' ? 'Citoyen' : 

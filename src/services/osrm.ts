@@ -95,7 +95,7 @@ export class OSRMService {
         // Update the backend with the estimated time
         try {
           const response = await trucksAPI.updateEstimatedTime(truckId, {
-            estimated_time: estimatedMinutes,
+            estimated_time_to_next_point: estimatedMinutes,
             next_collection_point_id: nextPoint.collection_point.id,
             last_updated: new Date().toISOString()
           });

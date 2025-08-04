@@ -41,8 +41,8 @@ const handleResponse = async <T>(response: Response): Promise<APIResponse<T>> =>
     console.error('❌ Erreur HTTP:', response.status, json);
     return {
       success: false,
-      message: json.message || `HTTP ${response.status}: ${response.statusText}`,
-      data: null as T,
+      error: json.message || `HTTP ${response.status}: ${response.statusText}`,
+      data: undefined,
     };
   }
   console.log('✅ Réponse HTTP réussie');
@@ -97,6 +97,35 @@ export const collectionPointsAPI = {
   // Récupérer un point de collecte par ID
   getById: async (id: string): Promise<APIResponse<CollectionPoint>> => {
     const response = await fetch(`${API_CONFIG.BASE_URL}/collection-points/${id}/`, {
+      headers: getAuthHeaders(),
+    });
+    return handleResponse(response);
+  },
+
+  // Créer un nouveau point de collecte
+  create: async (data: Partial<CollectionPoint>): Promise<APIResponse<CollectionPoint>> => {
+    const response = await fetch(`${API_CONFIG.BASE_URL}/collection-points/`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: JSON.stringify(data),
+    });
+    return handleResponse(response);
+  },
+
+  // Mettre à jour un point de collecte
+  update: async (id: string, data: Partial<CollectionPoint>): Promise<APIResponse<CollectionPoint>> => {
+    const response = await fetch(`${API_CONFIG.BASE_URL}/collection-points/${id}/`, {
+      method: 'PATCH',
+      headers: getAuthHeaders(),
+      body: JSON.stringify(data),
+    });
+    return handleResponse(response);
+  },
+
+  // Supprimer un point de collecte
+  delete: async (id: string): Promise<APIResponse<void>> => {
+    const response = await fetch(`${API_CONFIG.BASE_URL}/collection-points/${id}/`, {
+      method: 'DELETE',
       headers: getAuthHeaders(),
     });
     return handleResponse(response);
@@ -174,14 +203,19 @@ export const trucksAPI = {
 
   // Mettre à jour le temps estimé d'un camion
   updateEstimatedTime: async (id: string, data: { 
-    estimated_time: number; 
-    next_collection_point_id: string;
+    estimated_time_to_next_point: number; 
+    next_collection_point_id?: string;
     last_updated?: string;
   }): Promise<APIResponse<Truck>> => {
+    // Le backend attend seulement "estimated_time"
+    const backendData = {
+      estimated_time: data.estimated_time_to_next_point
+    };
+    
     const response = await fetch(`${API_CONFIG.BASE_URL}/trucks/${id}/estimated-time/`, {
       method: 'PATCH',
       headers: getAuthHeaders(),
-      body: JSON.stringify(data),
+      body: JSON.stringify(backendData),
     });
     return handleResponse(response);
   },
@@ -279,6 +313,34 @@ export const schedulesAPI = {
   delete: async (id: string): Promise<APIResponse<null>> => {
     const response = await fetch(`${API_CONFIG.BASE_URL}/schedules/${id}/`, {
       method: 'DELETE',
+      headers: getAuthHeaders(),
+    });
+    return handleResponse(response);
+  },
+
+  // Mettre à jour un point de route (ScheduleRoute)
+  updateRoutePoint: async (routePointId: string, updates: { completed?: boolean }): Promise<APIResponse<any>> => {
+    const response = await fetch(`${API_CONFIG.BASE_URL}/schedule-routes/${routePointId}/`, {
+      method: 'PATCH',
+      headers: getAuthHeaders(),
+      body: JSON.stringify(updates),
+    });
+    return handleResponse(response);
+  },
+
+  // Marquer un point de route comme complété
+  markRoutePointCompleted: async (routePointId: string): Promise<APIResponse<any>> => {
+    const response = await fetch(`${API_CONFIG.BASE_URL}/schedule-routes/${routePointId}/mark_completed/`, {
+      method: 'PATCH',
+      headers: getAuthHeaders(),
+    });
+    return handleResponse(response);
+  },
+
+  // Marquer un point de route comme non complété
+  markRoutePointIncomplete: async (routePointId: string): Promise<APIResponse<any>> => {
+    const response = await fetch(`${API_CONFIG.BASE_URL}/schedule-routes/${routePointId}/mark_incomplete/`, {
+      method: 'PATCH',
       headers: getAuthHeaders(),
     });
     return handleResponse(response);
